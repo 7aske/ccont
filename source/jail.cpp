@@ -49,6 +49,8 @@ private:
 
     void setup_installssl();
 
+    void setup_dev();
+
     static int start(void *);
 
     template<typename ... Params>
@@ -71,6 +73,9 @@ Jail::Jail(const char *rootfs) {
     // stack for container
     this->cont_stack = allocate_stack();
 
+    // bind /dev to container /dev
+    this->setup_dev();
+
     // small bashrc for colorful terminal
     this->setup_bashrc();
 
@@ -79,6 +84,7 @@ Jail::Jail(const char *rootfs) {
 
     // pre-download required .deb packages to install ca-certificates
     this->setup_ssldeb();
+
 
 
     // flags to clone process tree and unix time sharing
@@ -117,6 +123,16 @@ void Jail::setup_bashrc() {
 void Jail::setup_root() {
     chroot(((string) "./rootfs/" + this->rootfs).c_str());
     chdir("/");
+    if (mount("proc", "/proc", "proc", 0, nullptr) < 0) {
+        panic("Unable to mount /proc");
+    }
+
+}
+
+void Jail::setup_dev() {
+    if (mount("/dev", ("./rootfs/" + (string) this->rootfs + "/dev").c_str(), "tmpfs", MS_BIND, nullptr) < 0) {
+        panic("Unable to mount /dev");
+    }
 }
 
 char *Jail::allocate_stack(int size) {
@@ -124,20 +140,17 @@ char *Jail::allocate_stack(int size) {
     if (stack == nullptr) {
         panic("Cannot allocate stack memory");
     }
-    // stack grows downwards
+    // stack grows downwards so move ptr to the end
     return stack + size;
 }
 
 int Jail::start(void *args) {
     Jail *self = (Jail *) args;
-    cout << "root - " << self->rootfs << endl;
+    cout << "INFO root - " << self->rootfs << endl;
 
     self->setup_variables();
     self->setup_root();
 
-    if (mount("proc", "/proc", "proc", 0, nullptr) < 0) {
-        panic("Unable to mount proc");
-    }
     cout << "INFO mounted proc to /proc\n";
     cout << "INFO container pid: " << getpid() << endl;
 
@@ -163,7 +176,6 @@ void Jail::panic(const char *message) {
 }
 
 
-
 void Jail::setup_certs() {
     system(("cp ./config/ca-certificates.conf ./rootfs/" + (string) this->rootfs + "/etc/").c_str());
 }
@@ -186,13 +198,13 @@ void Jail::setup_ssldeb() {
     system(("mkdir -p " + path).c_str());
 
     if (!Jail::exists(file_libssl)) {
-        system(("wget -O " + file_libssl + " " + url_libssl).c_str());
+        system(("wget -O " + file_libssl + " " + url_libssl + " -q --show-progress").c_str());
     }
     if (!Jail::exists(file_openssl)) {
-        system(("wget -O " + file_openssl + " " + url_openssl).c_str());
+        system(("wget -O " + file_openssl + " " + url_openssl + " -q --show-progress").c_str());
     }
     if (!Jail::exists(file_cacert)) {
-        system(("wget -O " + file_cacert + " " + url_cacert).c_str());
+        system(("wget -O " + file_cacert + " " + url_cacert + " -q --show-progress").c_str());
     }
 }
 
@@ -200,34 +212,40 @@ void Jail::setup_installssl() {
 
     // if the cmd is not available installed pre-downloaded packages
     // and re-run it to update ssl certs to make apt update possible
-    if (system("update-ca-certificates")) {
+//    cout << system("update-ca-certificates") << endl;
+    if (system("update-ca-certificates > /dev/null")) {
         chdir("/tmp/openssl/");
-        char url_openssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1-1ubuntu2.1_amd64.deb";
-        char url_libssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/openssl_1.1.1-1ubuntu2.1_amd64.deb";
+        char url_libssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1-1ubuntu2.1_amd64.deb";
+        char url_openssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/openssl_1.1.1-1ubuntu2.1_amd64.deb";
         char url_cacert[] = "http://mirrors.kernel.org/ubuntu/pool/main/c/ca-certificates/ca-certificates_20180409_all.deb";
 
-        string base_openssl(basename(url_openssl));
         string base_libssl(basename(url_libssl));
+        string base_openssl(basename(url_openssl));
         string base_cacert(basename(url_cacert));
 
         std::perror("ERROR");
-        if (system(("dpkg -i " + base_libssl).c_str()) < 0) {
+        if (system(("dpkg -i " + base_libssl + "> /dev/null").c_str()) < 0) {
             panic("ERROR");
         }
-        if (system(("dpkg -i " + base_openssl).c_str()) < 0) {
+        if (system(("dpkg -i " + base_openssl + "> /dev/null").c_str()) < 0) {
             panic("ERROR");
         }
-        if (system(("dpkg -i " + base_cacert).c_str()) < 0) {
+        if (system(("dpkg -i " + base_cacert + "> /dev/null").c_str()) < 0) {
             panic("ERROR");
         }
         system("update-ca-certificates");
-        system("apt update");
         chdir("/");
+        system("apt update");
     }
 
 }
 
 Jail::~Jail() {
-    // unmount container procfs from outside
+    // unmount container /proc from outside
     system(("umount ./rootfs/" + (string) this->rootfs + "/proc").c_str());
+
+    // umount container /dev from outside
+    system(("umount ./rootfs/" + (string) this->rootfs + "/dev").c_str());
+
 }
+

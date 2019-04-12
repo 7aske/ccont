@@ -51,9 +51,9 @@ void setup_ubuntucont(const char *bname) {
 
         // download rootfs archive if its not present
         if (!Jail::exists("./tmp/" + (string) url_base)) {
-            system(("wget -O ./tmp/" + (string) url_base + " " + (string) url).c_str());
+            system(("wget -O ./tmp/" + (string) url_base + " " + (string) url + " -q --show-progress").c_str());
         }
-        system(("tar xf ./tmp/" + (string) url_base + " -C " + folder).c_str());
+        system(("tar xf ./tmp/" + (string) url_base + " -C " + folder + "> /dev/null").c_str());
     }
 }
 
