@@ -1,0 +1,6 @@
+.idea
+cmake-build-debug/
+rootfs/
+ccont
+*.tar.xz
+*.tar.gz
