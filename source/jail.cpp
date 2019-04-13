@@ -71,6 +71,7 @@ private:
     const char* cmd = nullptr;
     char* const* cmd_args;
     char* cont_stack;
+    long cont_satack_size = 65536;
 
 };
 
@@ -114,7 +115,7 @@ Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
     // bind /dev to container /dev
     this->setup_dev();
 
-//    this->setup_bashrc();
+    // this->setup_bashrc();
 
     this->setup_src();
 
@@ -239,6 +240,7 @@ char* Jail::allocate_stack(int size) {
         panic("Cannot allocate stack memory");
     }
     // stack grows downwards so move ptr to the end
+    this->cont_satack_size = size;
     return stack + size;
 }
 
@@ -313,12 +315,12 @@ void Jail::setup_installssl() {
 }
 
 Jail::~Jail() {
+    delete [] (this->cont_stack - this->cont_satack_size);
     // unmount container /proc from outside
     system(("umount ./rootfs/" + (string) this->rootfs + "/proc").c_str());
 
     // umount container /dev from outside
     system(("umount ./rootfs/" + (string) this->rootfs + "/dev").c_str());
-
     if (this->cmd != nullptr) {
         system(("umount ./rootfs/" + (string) this->rootfs + "/src").c_str());
     }
