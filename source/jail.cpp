@@ -218,6 +218,7 @@ void Jail::setup_variables() {
     clearenv();
     system(((string) "hostname " + this->rootfs).c_str());
     setenv("HOME", "/", 0);
+    setenv("DISPLAY", ":0.0", 0);
     setenv("TERM", "xterm-256color", 0);
     setenv("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/:/src/", 0);
 }
