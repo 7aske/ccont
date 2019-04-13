@@ -36,7 +36,11 @@ public:
         }
     }
 
+    static string readcmd(string cmd);
+
 private:
+//    void setup_sigint_handler();
+
     void setup_variables();
 
     void setup_root(const char* = "/");
@@ -64,14 +68,15 @@ private:
 
     char* allocate_stack(int = 65536);
 
-    static void panic(const char*);
 
+    static void panic(const char*);
 
     const char* rootfs;
     const char* cmd = nullptr;
-    char* const* cmd_args;
+    char* const* cmd_args = nullptr;
+
     char* cont_stack;
-    long cont_satack_size = 65536;
+    long cont_stack_size = 65536;
 
 };
 
@@ -230,6 +235,8 @@ void Jail::setup_resolvconf() {
 
 void Jail::setup_bashrc(char* ccont_root) {
     string dir(ccont_root);
+    dir = readcmd("which " + dir);
+    dir = readcmd("readlink " + dir);
     dir = dirname((char*) dir.c_str());
     system(("cp " + dir + "/config/.bashrc ./rootfs/" + this->rootfs + "/").c_str());
 }
@@ -240,7 +247,7 @@ char* Jail::allocate_stack(int size) {
         panic("Cannot allocate stack memory");
     }
     // stack grows downwards so move ptr to the end
-    this->cont_satack_size = size;
+    this->cont_stack_size = size;
     return stack + size;
 }
 
@@ -252,6 +259,8 @@ void Jail::setup_dev() {
 
 void Jail::setup_certs(char* ccont_root) {
     string dir(ccont_root);
+    dir = readcmd("which " + dir);
+    dir = readcmd("readlink " + dir);
     dir = dirname((char*) dir.c_str());
     system(("cp " + dir + "/config/ca-certificates.conf ./rootfs/" + this->rootfs + "/etc/").c_str());
 }
@@ -298,14 +307,20 @@ void Jail::setup_installssl() {
         string base_openssl(basename(url_openssl));
         string base_cacert(basename(url_cacert));
 
-        if (system(("dpkg -i " + base_libssl + "> /dev/null").c_str()) < 0) {
-            panic("ERROR");
+        if (system(("dpkg -i " + base_libssl + " &> /dev/null").c_str()) < 0) {
+            cout << "ERROR unable to install libssl\n";
+        } else {
+            cout << "INFO installed libssl;\n";
         }
-        if (system(("dpkg -i " + base_openssl + "> /dev/null").c_str()) < 0) {
-            panic("ERROR");
+        if (system(("dpkg -i " + base_openssl + " &> /dev/null").c_str()) < 0) {
+            cout << "ERROR unable to install openssl\n";
+        } else {
+            cout << "INFO installed openssl\n";
         }
-        if (system(("dpkg -i " + base_cacert + "> /dev/null").c_str()) < 0) {
-            panic("ERROR");
+        if (system(("dpkg -i " + base_cacert + " &> /dev/null").c_str()) < 0) {
+            cout << "ERROR unable to install ca-certificates\n";
+        } else {
+            cout << "INFO installed ca-certificates\n";
         }
         system("update-ca-certificates");
         chdir("/");
@@ -315,14 +330,73 @@ void Jail::setup_installssl() {
 }
 
 Jail::~Jail() {
-    delete [] (this->cont_stack - this->cont_satack_size);
+    // free allocated container stack
+    delete[] (this->cont_stack - this->cont_stack_size);
+
     // unmount container /proc from outside
-    system(("umount ./rootfs/" + (string) this->rootfs + "/proc").c_str());
+    cout << "INFO umounting /proc\n";
+    if (system(("umount ./rootfs/" + (string) this->rootfs + "/proc").c_str()) < 0) {
+        cout << "ERROR umounting /proc\n";
+    }
 
     // umount container /dev from outside
-    system(("umount ./rootfs/" + (string) this->rootfs + "/dev").c_str());
+    cout << "INFO umounting /dev\n";
+    if (system(("umount ./rootfs/" + (string) this->rootfs + "/dev").c_str()) < 0) {
+        cout << "ERROR umounting /dev\n";
+    }
+
+    // unmount /src | if cmd is not set then /src is not even mounted
     if (this->cmd != nullptr) {
-        system(("umount ./rootfs/" + (string) this->rootfs + "/src").c_str());
+        cout << "INFO umounting /src\n";
+        if (system(("umount ./rootfs/" + (string) this->rootfs + "/src").c_str()) < 0) {
+            cout << "ERROR umounting /src\n";
+        }
     }
 }
 
+string Jail::readcmd(string cmd) {
+
+    string data;
+    FILE* stream;
+    const int max_buffer = 256;
+    char buffer[max_buffer];
+    cmd.append(" 2>&1");
+
+    stream = popen(cmd.c_str(), "r");
+    if (stream) {
+        while (!feof(stream))
+            if (fgets(buffer, max_buffer, stream) != nullptr) data.append(buffer);
+        pclose(stream);
+    }
+    return data;
+}
+//void Jail::setup_sigint_handler() {
+//    struct sigaction sigIntHandler{};
+//
+//    sigIntHandler.sa_handler = Jail::_sigint_handler;
+//    sigemptyset(&sigIntHandler.sa_mask);
+//    sigIntHandler.sa_flags = 0;
+//
+//    sigaction(SIGINT, &sigIntHandler, nullptr);
+//}
+//void _sigint_handler(int) {
+//    // unmount container /proc from outside
+//    cout << "INFO umounting /proc";
+//    if (system(("umount ./rootfs/" + (string) this->rootfs + "/proc").c_str()) < 0) {
+//        cout << "ERROR umounting /proc";
+//    }
+//
+//    // umount container /dev from outside
+//    cout << "INFO umounting /dev";
+//    if (system(("umount ./rootfs/" + (string) this->rootfs + "/dev").c_str()) < 0) {
+//        cout << "ERROR umounting /dev";
+//    }
+//
+//    // unmount /src | if cmd is not set then /src is not even mounted
+//    if (this->cmd != nullptr) {
+//        cout << "INFO umounting /src";
+//        if (system(("umount ./rootfs/" + (string) this->rootfs + "/src").c_str()) < 0) {
+//            cout << "ERROR umounting /src";
+//        }
+//    }
+//}

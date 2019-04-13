@@ -14,7 +14,8 @@
 
 void panic(const char*);
 
-void setup_ubuntucont(const char*, char*);
+void setup_ubuntucont(const char*, string);
+
 
 using namespace std;
 
@@ -22,10 +23,14 @@ int main(int argc, char* args[]) {
     // TODO: arg rootfs picker
     const char* rootfs = "ubuntu1810-base";
     cout << "parent pid: " << getpid() << endl;
+    string dir(Jail::readcmd("which " + string(args[0])));
+    dir = Jail::readcmd("readlink " + dir);
+    dir = dir.substr(0, dir.size() - 1);
+    cout << dir << endl;
 
     // download and extract minimal ubuntu-base rootfs
-    cout << args[0] << endl;
-    setup_ubuntucont(rootfs, args[0]);
+    setup_ubuntucont(rootfs, dir);
+
     if (argc >= 2) {
         Jail jail(rootfs, args[1], &args[1]);
     } else {
@@ -40,16 +45,15 @@ void panic(const char* message) {
     exit(EXIT_FAILURE);
 }
 
-void setup_ubuntucont(const char* bname, char* ccont_root) {
+void setup_ubuntucont(const char* bname, string dir) {
     char url[] = "http://cdimage.ubuntu.com/ubuntu-base/releases/18.10/release/ubuntu-base-18.10-base-amd64.tar.gz";
     const char* url_base = basename(url);
-    string dir(ccont_root);
 
-    dir = dirname((char*)dir.c_str());
+    dir = dirname((char*) dir.c_str());
     dir = dir.append("/tmp");
 
     string folder("./rootfs/" + (string) bname);
-
+    cout << dir << endl;
     if (!Jail::exists_stat(dir.c_str())) {
         system(("mkdir -p " + dir).c_str());
     }
@@ -62,8 +66,10 @@ void setup_ubuntucont(const char* bname, char* ccont_root) {
         if (!Jail::exists(dir + "/" + url_base)) {
             system(("wget -O " + dir + "/" + (string) url_base + " " + (string) url + " -q --show-progress").c_str());
         }
-        system(("tar xf " + dir + "/" + (string) url_base + " -C " + folder + "> /dev/null").c_str());
+        system(("tar xf " + dir + "/" + (string) url_base + " -C " + folder + " > /dev/null").c_str());
     }
 }
+
+
 
 // TODO: select different linux distros
