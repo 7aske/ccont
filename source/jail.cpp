@@ -11,6 +11,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <libgen.h>
+#include <cstring>
 
 using namespace std;
 
@@ -39,7 +40,13 @@ public:
     static string readcmd(string cmd);
 
 private:
-//    void setup_sigint_handler();
+    void setup_sigint_handler();
+
+    void setup_sigint_handler_cmd();
+
+    static void _sigint_handler(int);
+
+    static void _sigint_handler_cmd(int);
 
     void setup_variables();
 
@@ -73,7 +80,7 @@ private:
 
     const char* rootfs;
     const char* cmd = nullptr;
-    char* const* cmd_args = nullptr;
+    char** cmd_args = nullptr;
 
     char* cont_stack;
     long cont_stack_size = 65536;
@@ -82,6 +89,9 @@ private:
 
 // tar -C ./rootfs/ubuntu1810-base -xf filename
 Jail::Jail(const char* rootfs, char* const* args) {
+    char buf[128];
+    int cpid;
+
     this->rootfs = rootfs;
 
     // stack for container
@@ -99,10 +109,14 @@ Jail::Jail(const char* rootfs, char* const* args) {
     // pre-download required .deb packages to install ca-certificates
     this->setup_ssldeb();
 
+    getcwd(buf, 128);
+    cout << "INFO mounted " << buf << " to /src\n";
+
     // flags to clone process tree and unix time sharing
-    int n = clone(Jail::start, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this);
-    if (n <= 0) {
+    if ((cpid = clone(Jail::start, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
         panic("Error cloning process");
+    } else {
+        cout << "DEBUG PID: " << cpid << endl;
     }
 
     // wait for container shell to exit
@@ -110,9 +124,15 @@ Jail::Jail(const char* rootfs, char* const* args) {
 }
 
 Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
+    char buf[128];
+    char* callcmd = *args;
+    int cpid;
+
     this->rootfs = rootfs;
     this->cmd = cmd;
-    this->cmd_args = args;
+    this->cmd_args = (char**) ++args;
+
+    this->setup_sigint_handler();
 
     // allocate stack for container
     this->cont_stack = allocate_stack();
@@ -120,14 +140,18 @@ Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
     // bind /dev to container /dev
     this->setup_dev();
 
-    // this->setup_bashrc();
+    this->setup_bashrc(callcmd);
 
     this->setup_src();
 
+    getcwd(buf, 128);
+    cout << "INFO mounted " << buf << " to /src\n";
+
     // flags to clone process tree and unix time sharing
-    int n = clone(Jail::start_cmd, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this);
-    if (n <= 0) {
+    if ((cpid = clone(Jail::start_cmd, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
         panic("Error cloning process");
+    } else {
+        cout << "DEBUG PID: " << cpid << endl;
     }
 
     // wait for container shell to exit
@@ -136,13 +160,16 @@ Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
 
 int Jail::start(void* args) {
     Jail* self = (Jail*) args;
+    int cpid;
+
+    self->setup_sigint_handler_cmd();
 
     self->setup_variables();
 
     self->setup_root();
     cout << "INFO mounted proc to /proc\n";
 
-    cout << "INFO container pid: " << getpid() << endl;
+    cout << "INFO container PID: " << getpid() << endl;
 
     // setup nameservers for internet access
     self->setup_resolvconf();
@@ -150,39 +177,64 @@ int Jail::start(void* args) {
     // install pre-downloaded ssl packages
     self->setup_installssl();
 
-    if (self->run("/bin/bash") != 0) {
+    if ((cpid = self->run("/bin/bash")) != 0) {
         perror("ERROR");
         return EXIT_FAILURE;
+    } else {
+        cout << "DEBUG container PID: " << cpid << endl;
     }
     return EXIT_SUCCESS;
 }
 
 int Jail::start_cmd(void* args) {
     Jail* self = (Jail*) args;
-    cout << "INFO root - " << self->rootfs << endl;
-    cout << "INFO cmd - " << self->cmd << endl;
+    int cpid;
+
+    cout << "INFO q - " << self->rootfs << endl;
+    cout << "INFO cmd  - " << self->cmd << endl;
+
+    self->setup_sigint_handler();
 
     self->setup_variables();
 
     self->setup_root("/src");
-
     cout << "INFO mounted proc to /proc\n";
-    cout << "INFO mounted current dir to /src\n";
 
-    cout << "INFO container pid: " << getpid() << endl;
+    cout << "INFO container PID: " << getpid() << endl;
 
     // setup nameservers for internet access
     self->setup_resolvconf();
 
     // install pre-downloaded ssl packages
-    // self->setup_installssl();
+    self->setup_installssl();
 
-    if (execvp(((string) self->cmd).c_str(), self->cmd_args) != 0) {
+    // go back to src after doing installtls
+    chdir("/src");
+
+    // BUFFER OVERFLOW EXPLOIT RIGHT THERE WOHOO
+    // Managed to hack process into executing inside an
+    // invoked shell by starting the shell with temp rc file
+    string cmd_temp;
+    while (*self->cmd_args != nullptr) {
+        cmd_temp.append(*self->cmd_args);
+        cmd_temp.append(" ");
+        self->cmd_args++;
+    }
+    FILE* startup = fopen("/.startup", "w");
+    fprintf(startup, "%s\n", "source $HOME/.bashrc");
+    fprintf(startup, "%s\n", cmd_temp.c_str());
+    fclose(startup);
+
+//    if ((cpid = execvp(("" + (string) self->cmd).c_str(), self->cmd_args)) != 0) {
+    if ((cpid = system("/bin/bash --init-file /.startup")) <= 0) {
         panic("ERROR");
         return EXIT_FAILURE;
+    } else {
+        cout << "DEBUG container PID: " << cpid << endl;
     }
     return EXIT_SUCCESS;
 }
+
 
 template<typename ... Params>
 int Jail::run(Params ...params) {
@@ -327,33 +379,8 @@ void Jail::setup_installssl() {
         chdir("/");
         system("apt update");
     }
-
 }
 
-Jail::~Jail() {
-    // free allocated container stack
-    delete[] (this->cont_stack - this->cont_stack_size);
-
-    // unmount container /proc from outside
-    cout << "INFO umounting /proc\n";
-    if (system(("umount ./rootfs/" + (string) this->rootfs + "/proc").c_str()) < 0) {
-        cout << "ERROR umounting /proc\n";
-    }
-
-    // umount container /dev from outside
-    cout << "INFO umounting /dev\n";
-    if (system(("umount ./rootfs/" + (string) this->rootfs + "/dev").c_str()) < 0) {
-        cout << "ERROR umounting /dev\n";
-    }
-
-    // unmount /src | if cmd is not set then /src is not even mounted
-    if (this->cmd != nullptr) {
-        cout << "INFO umounting /src\n";
-        if (system(("umount ./rootfs/" + (string) this->rootfs + "/src").c_str()) < 0) {
-            cout << "ERROR umounting /src\n";
-        }
-    }
-}
 
 string Jail::readcmd(string cmd) {
 
@@ -371,33 +398,61 @@ string Jail::readcmd(string cmd) {
     }
     return data;
 }
-//void Jail::setup_sigint_handler() {
-//    struct sigaction sigIntHandler{};
-//
-//    sigIntHandler.sa_handler = Jail::_sigint_handler;
-//    sigemptyset(&sigIntHandler.sa_mask);
-//    sigIntHandler.sa_flags = 0;
-//
-//    sigaction(SIGINT, &sigIntHandler, nullptr);
-//}
-//void _sigint_handler(int) {
-//    // unmount container /proc from outside
-//    cout << "INFO umounting /proc";
-//    if (system(("umount ./rootfs/" + (string) this->rootfs + "/proc").c_str()) < 0) {
-//        cout << "ERROR umounting /proc";
-//    }
-//
-//    // umount container /dev from outside
-//    cout << "INFO umounting /dev";
-//    if (system(("umount ./rootfs/" + (string) this->rootfs + "/dev").c_str()) < 0) {
-//        cout << "ERROR umounting /dev";
-//    }
-//
-//    // unmount /src | if cmd is not set then /src is not even mounted
-//    if (this->cmd != nullptr) {
-//        cout << "INFO umounting /src";
-//        if (system(("umount ./rootfs/" + (string) this->rootfs + "/src").c_str()) < 0) {
-//            cout << "ERROR umounting /src";
-//        }
-//    }
-//}
+
+void Jail::setup_sigint_handler() {
+    struct sigaction sigIntHandler{};
+
+    sigIntHandler.sa_handler = Jail::_sigint_handler;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0;
+
+    sigaction(SIGINT, &sigIntHandler, nullptr);
+}
+
+void Jail::setup_sigint_handler_cmd() {
+    struct sigaction sigIntHandler{};
+
+    sigIntHandler.sa_handler = Jail::_sigint_handler_cmd;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0;
+
+    sigaction(SIGINT, &sigIntHandler, nullptr);
+}
+
+void Jail::_sigint_handler(int) {
+    cout << "Handling SIGINT for " << getpid() << endl;
+    sleep(1);
+    exit(0);
+}
+
+void Jail::_sigint_handler_cmd(int) {
+    cout << "Handling SIGINT for " << getpid() << endl;
+    exit(0);
+}
+
+Jail::~Jail() {
+    // free allocated container stack
+    delete[] (this->cont_stack - this->cont_stack_size);
+
+    // unmount container /proc from outside
+    cout << "INFO umounting /proc\n";
+    if (system(("umount -f ./rootfs/" + (string) this->rootfs + "/proc").c_str()) < 0) {
+        cout << "ERROR umounting /proc\n";
+    }
+
+    // unmount container /dev from outside
+    cout << "INFO umounting /dev\n";
+    if (system(("umount ./rootfs/" + (string) this->rootfs + "/dev").c_str()) < 0) {
+        cout << "ERROR umounting /dev\n";
+    }
+
+    // unmount /src | if cmd is not set then /src is not even mounted
+    if (this->cmd != nullptr) {
+        cout << "INFO umounting /src\n";
+        if (system(("umount -f ./rootfs/" + (string) this->rootfs + "/src").c_str()) < 0) {
+            cout << "ERROR umounting /src\n";
+        }
+    }
+}
+
+

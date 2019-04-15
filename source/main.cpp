@@ -20,9 +20,13 @@ void setup_ubuntucont(const char*, string);
 using namespace std;
 
 int main(int argc, char* args[]) {
+    if (getuid() != 0) {
+        errno = EACCES;
+        panic("ERROR");
+    }
     // TODO: arg rootfs picker
     const char* rootfs = "ubuntu1810-base";
-    cout << "parent pid: " << getpid() << endl;
+    cout << "INFO parent PID: " << getpid() << endl;
     string dir(Jail::readcmd("which " + string(args[0])));
     dir = Jail::readcmd("readlink " + dir);
     dir = dir.substr(0, dir.size() - 1);
@@ -32,7 +36,7 @@ int main(int argc, char* args[]) {
     setup_ubuntucont(rootfs, dir);
 
     if (argc >= 2) {
-        Jail jail(rootfs, args[1], &args[1]);
+        Jail jail(rootfs, args[1], &args[0]);
     } else {
         // setup and start the container in selected rootfs
         Jail jail(rootfs, &args[0]);
