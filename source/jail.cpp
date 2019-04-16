@@ -89,7 +89,7 @@ private:
 
 // tar -C ./rootfs/ubuntu1810-base -xf filename
 Jail::Jail(const char* rootfs, char* const* args) {
-    char buf[128];
+//    char buf[128];
     int cpid;
 
     this->rootfs = rootfs;
@@ -109,14 +109,14 @@ Jail::Jail(const char* rootfs, char* const* args) {
     // pre-download required .deb packages to install ca-certificates
     this->setup_ssldeb();
 
-    getcwd(buf, 128);
-    cout << "INFO mounted " << buf << " to /src\n";
+//    getcwd(buf, 128);
+//    cout << "INFO mounted " << buf << " to /src\n";
 
     // flags to clone process tree and unix time sharing
     if ((cpid = clone(Jail::start, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
         panic("Error cloning process");
     } else {
-        cout << "DEBUG PID: " << cpid << endl;
+        cout << "INFO container PID: " << cpid << endl;
     }
 
     // wait for container shell to exit
@@ -151,7 +151,7 @@ Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
     if ((cpid = clone(Jail::start_cmd, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
         panic("Error cloning process");
     } else {
-        cout << "DEBUG PID: " << cpid << endl;
+        cout << "INFO container PID: " << cpid << endl;
     }
 
     // wait for container shell to exit
@@ -160,7 +160,6 @@ Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
 
 int Jail::start(void* args) {
     Jail* self = (Jail*) args;
-    int cpid;
 
     self->setup_sigint_handler_cmd();
 
@@ -177,18 +176,15 @@ int Jail::start(void* args) {
     // install pre-downloaded ssl packages
     self->setup_installssl();
 
-    if ((cpid = self->run("/bin/bash")) != 0) {
+    if (self->run("/bin/bash") != 0) {
         perror("ERROR");
         return EXIT_FAILURE;
-    } else {
-        cout << "DEBUG container PID: " << cpid << endl;
     }
     return EXIT_SUCCESS;
 }
 
 int Jail::start_cmd(void* args) {
     Jail* self = (Jail*) args;
-    int cpid;
 
     cout << "INFO q - " << self->rootfs << endl;
     cout << "INFO cmd  - " << self->cmd << endl;
@@ -226,11 +222,9 @@ int Jail::start_cmd(void* args) {
     fclose(startup);
 
 //    if ((cpid = execvp(("" + (string) self->cmd).c_str(), self->cmd_args)) != 0) {
-    if ((cpid = system("/bin/bash --init-file /.startup")) <= 0) {
+    if (system("/bin/bash --init-file /.startup") <= 0) {
         panic("ERROR");
         return EXIT_FAILURE;
-    } else {
-        cout << "DEBUG container PID: " << cpid << endl;
     }
     return EXIT_SUCCESS;
 }
@@ -308,6 +302,7 @@ void Jail::setup_dev() {
     if (mount("/dev", ("./rootfs/" + (string) this->rootfs + "/dev").c_str(), "tmpfs", MS_BIND, nullptr) < 0) {
         panic("Unable to mount /dev");
     }
+    cout << "INFO mounted dev to /dev\n";
 }
 
 void Jail::setup_certs(char* ccont_root) {
@@ -360,24 +355,35 @@ void Jail::setup_installssl() {
         string base_openssl(basename(url_openssl));
         string base_cacert(basename(url_cacert));
 
-        if (system(("dpkg -i " + base_libssl + " &> /dev/null").c_str()) < 0) {
+        cout << base_libssl << endl;
+        cout << base_openssl << endl;
+        cout << base_cacert << endl;
+
+        cout << "INFO installing libssl\n";
+        if (system(("dpkg -i " + base_libssl + " 2> /dev/null").c_str()) < 0) {
             cout << "ERROR unable to install libssl\n";
         } else {
             cout << "INFO installed libssl;\n";
         }
-        if (system(("dpkg -i " + base_openssl + " &> /dev/null").c_str()) < 0) {
+
+        cout << "INFO installing openssl\n";
+        if (system(("dpkg -i " + base_openssl + " 2> /dev/null").c_str()) < 0) {
             cout << "ERROR unable to install openssl\n";
         } else {
             cout << "INFO installed openssl\n";
         }
-        if (system(("dpkg -i " + base_cacert + " &> /dev/null").c_str()) < 0) {
+
+        cout << "INFO installing ca-certificates\n";
+        if (system(("dpkg -i " + base_cacert + " 2> /dev/null").c_str()) < 0) {
             cout << "ERROR unable to install ca-certificates\n";
         } else {
             cout << "INFO installed ca-certificates\n";
         }
         system("update-ca-certificates");
         chdir("/");
-        system("apt update");
+        cout << "INFO running apt update";
+        system("apt update 2> /dev/null");
+        cout << "INFO done";
     }
 }
 

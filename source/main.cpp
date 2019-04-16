@@ -30,7 +30,7 @@ int main(int argc, char* args[]) {
     string dir(Jail::readcmd("which " + string(args[0])));
     dir = Jail::readcmd("readlink " + dir);
     dir = dir.substr(0, dir.size() - 1);
-    cout << dir << endl;
+//    cout << dir << endl;
 
     // download and extract minimal ubuntu-base rootfs
     setup_ubuntucont(rootfs, dir);
@@ -57,7 +57,7 @@ void setup_ubuntucont(const char* bname, string dir) {
     dir = dir.append("/tmp");
 
     string folder("./rootfs/" + (string) bname);
-    cout << dir << endl;
+//    cout << dir << endl;
     if (!Jail::exists_stat(dir.c_str())) {
         system(("mkdir -p " + dir).c_str());
     }
