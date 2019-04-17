@@ -13,6 +13,8 @@
 #include "jailubuntu.cpp"
 #include "jailalpine.cpp"
 
+#define _HELPFORMAT "%-25s\t%s\n"
+#define _ROOTFSFORMAT "%-25s\t%s\n"
 
 void panic(const char*);
 
@@ -20,28 +22,45 @@ void setup_ubuntucont(const char*, string);
 
 void setup_alpinecont(const char*, string);
 
-void list_rootfs();
+void print_rootfs();
+
+void print_help();
 
 string get_ccont_dir(char* arg0);
 
 bool use_alpine = false;
 bool use_ubuntu = false;
 
+struct avail_rootfs {
+    char ubuntu[32];
+    char alpine[32];
+};
 
 using namespace std;
 
 int main(int argc, char* args[]) {
+    for (int i = 0; i < argc; i++) {
+
+        if (strcmp(args[i], "--help") == 0 || strcmp(args[i], "-h") == 0) {
+            print_help();
+            exit(0);
+        } else if (strcmp(args[i], "--list") == 0 || strcmp(args[i], "-l") == 0) {
+            print_rootfs();
+            exit(0);
+        }
+    }
     if (getuid() != 0) {
         errno = EACCES;
         panic("ERROR");
     }
     int cmd_start = 0;
-    char rootfs[32];
+    struct avail_rootfs availRootfs = {
+            "ubuntu1810-base",
+            "alpine939"
+    };
     string dir = get_ccont_dir(args[0]);
 
-    // TODO: arg rootfs picker
     for (int i = 0; i < argc; i++) {
-    // printf("%s\n", args[i]);
         if (strcmp(args[i], "--alpine") == 0) {
             use_alpine = true;
         } else if (strcmp(args[i], "--ubuntu") == 0) {
@@ -52,32 +71,30 @@ int main(int argc, char* args[]) {
     }
 
     if (use_ubuntu) {
-        strncpy(rootfs, "ubuntu1810-base", 32);
-        setup_ubuntucont(rootfs, dir);
+        setup_ubuntucont(availRootfs.ubuntu, dir);
         if (cmd_start != 0) {
             if (cmd_start == argc - 1) {
                 cout << "ERROR please specify commands with -e flag\n";
             } else {
-                UbuntuJail jail(rootfs, &args[cmd_start + 1]);
+                UbuntuJail jail(availRootfs.ubuntu, &args[cmd_start + 1]);
             }
         } else {
-            UbuntuJail jail(rootfs, args[0]);
+            UbuntuJail jail(availRootfs.ubuntu, args[0]);
         }
     } else if (use_alpine) {
-        strncpy(rootfs, "alpine939", 32);
-        setup_alpinecont(rootfs, dir);
+        setup_alpinecont(availRootfs.alpine, dir);
         if (cmd_start != 0) {
             if (cmd_start == argc - 1) {
                 cout << "ERROR please specify commands with -e flag\n";
             } else {
-                AlpineJail jail(rootfs, &args[cmd_start + 1]);
+                AlpineJail jail(availRootfs.alpine, &args[cmd_start + 1]);
             }
         } else {
-            AlpineJail jail(rootfs, args[0]);
+            AlpineJail jail(availRootfs.alpine, args[0]);
         }
     } else {
         cout << "ERROR please specify a rootfs\n";
-        list_rootfs();
+        print_rootfs();
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
@@ -93,7 +110,7 @@ void setup_ubuntucont(const char* bname, string dir) {
     const char* url_base = basename(url);
 
     dir = dirname((char*) dir.c_str());
-    dir = dir.append("/tmp");
+    dir = dir.append("/cache");
 
     string folder("./rootfs/" + (string) bname);
     if (!UbuntuJail::exists_stat(dir.c_str())) {
@@ -106,7 +123,8 @@ void setup_ubuntucont(const char* bname, string dir) {
 
         // download rootfs archive if its not present
         if (!UbuntuJail::exists(dir + "/" + url_base)) {
-            system(("wget -O " + dir + "/" + (string) url_base + " " + (string) url + " -q --show-progress").c_str());
+            system(("wget -O " + dir + "/" + (string) url_base + " " + (string) url +
+                    " -q --show-progress").c_str());
         }
         system(("tar xf " + dir + "/" + (string) url_base + " -C " + folder + " > /dev/null").c_str());
     }
@@ -117,7 +135,7 @@ void setup_alpinecont(const char* bname, string dir) {
     const char* url_base = basename(url);
 
     dir = dirname((char*) dir.c_str());
-    dir = dir.append("/tmp");
+    dir = dir.append("/cache");
 
     string folder("./rootfs/" + (string) bname);
     // assume if there is no home folder that the rootfs doesn't exist
@@ -126,23 +144,35 @@ void setup_alpinecont(const char* bname, string dir) {
 
         // download rootfs archive if its not present
         if (!AlpineJail::exists(dir + "/" + url_base)) {
-            system(("wget -O " + dir + "/" + (string) url_base + " " + (string) url + " -q --show-progress").c_str());
+            system(("wget -O " + dir + "/" + (string) url_base + " " + (string) url +
+                    " -q --show-progress").c_str());
         }
         system(("tar xf " + dir + "/" + (string) url_base + " -C " + folder + " > /dev/null").c_str());
     }
 }
 
-void list_rootfs() {
-    cout << "--ubuntu Ubuntu 18.10" << endl;
-    cout << "--alpine Alpine 3.9.3" << endl;
+void print_help() {
+    printf("Ccont 0.0.1 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
+    printf("Usage:\n");
+    printf(_HELPFORMAT, "ccont <rootfs>", "start a <rootfs> container");
+    printf(_HELPFORMAT, "ccont <rootfs> -e <cmd> [args]", "start a <rootfs> container and execute");
+    printf(_HELPFORMAT, "", "command <cmd> with arguments [args]");
+    printf(_HELPFORMAT, "ccont --list, -l", "print a list of available file systems");
+    printf(_HELPFORMAT, "ccont --help, -h", "print this message");
+}
+
+void print_rootfs() {
+    printf("Ccont 0.0.1 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
+    printf("Available root file systems:\n");
+    printf(_HELPFORMAT, "--ubuntu", "Ubuntu 18.10");
+    printf(_HELPFORMAT, "--alpine", "Alpine 3.9.3");
 }
 
 string get_ccont_dir(char* arg0) {
-//    cout << "INFO parent PID: " << getpid() << endl;
+//    cout << "INFO parent PID: " f<< getpid() << endl;
     string dir(UbuntuJail::readcmd("which " + string(arg0)));
     dir = UbuntuJail::readcmd("readlink " + dir);
     dir = dir.substr(0, dir.size() - 1);
     return dir;
 }
 
-// TODO: select different linux distros
