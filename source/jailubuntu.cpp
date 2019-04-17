@@ -15,13 +15,13 @@
 
 using namespace std;
 
-class Jail {
+class UbuntuJail {
 public:
-    explicit Jail(const char*, char* const*);
+    explicit UbuntuJail(const char*, char* const);
 
-    explicit Jail(const char*, const char*, char* const*);
+    explicit UbuntuJail(const char*, char* const*);
 
-    ~Jail();
+    ~UbuntuJail();
 
     inline static bool exists_stat(const char* name) {
         struct stat fileStat{};
@@ -79,7 +79,6 @@ private:
     static void panic(const char*);
 
     const char* rootfs;
-    const char* cmd = nullptr;
     char** cmd_args = nullptr;
 
     char* cont_stack;
@@ -88,7 +87,7 @@ private:
 };
 
 // tar -C ./rootfs/ubuntu1810-base -xf filename
-Jail::Jail(const char* rootfs, char* const* args) {
+UbuntuJail::UbuntuJail(const char* rootfs, char* const arg) {
 //    char buf[128];
     int cpid;
 
@@ -101,19 +100,16 @@ Jail::Jail(const char* rootfs, char* const* args) {
     this->setup_dev();
 
     // small bashrc for colorful terminal
-    this->setup_bashrc(args[0]);
+    this->setup_bashrc(arg);
 
     // copy default certs to container
-    this->setup_certs(args[0]);
+    this->setup_certs(arg);
 
     // pre-download required .deb packages to install ca-certificates
     this->setup_ssldeb();
 
-//    getcwd(buf, 128);
-//    cout << "INFO mounted " << buf << " to /src\n";
-
     // flags to clone process tree and unix time sharing
-    if ((cpid = clone(Jail::start, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
+    if ((cpid = clone(UbuntuJail::start, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
         panic("Error cloning process");
     } else {
         cout << "INFO container PID: " << cpid << endl;
@@ -123,14 +119,16 @@ Jail::Jail(const char* rootfs, char* const* args) {
     wait(nullptr);
 }
 
-Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
+UbuntuJail::UbuntuJail(const char* rootfs, char* const* args) {
+    if (args == nullptr) {
+        panic("ERROR -e specified with no command");
+    }
     char buf[128];
-    char* callcmd = *args;
+    char callcmd[] = "ccont";
     int cpid;
 
     this->rootfs = rootfs;
-    this->cmd = cmd;
-    this->cmd_args = (char**) ++args;
+    this->cmd_args = (char**) args;
 
     this->setup_sigint_handler();
 
@@ -148,7 +146,8 @@ Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
     cout << "INFO mounted " << buf << " to /src\n";
 
     // flags to clone process tree and unix time sharing
-    if ((cpid = clone(Jail::start_cmd, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
+    if ((cpid = clone(UbuntuJail::start_cmd, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <=
+        0) {
         panic("Error cloning process");
     } else {
         cout << "INFO container PID: " << cpid << endl;
@@ -158,8 +157,8 @@ Jail::Jail(const char* rootfs, const char* cmd, char* const* args) {
     wait(nullptr);
 }
 
-int Jail::start(void* args) {
-    Jail* self = (Jail*) args;
+int UbuntuJail::start(void* args) {
+    auto* self = (UbuntuJail*) args;
 
     self->setup_sigint_handler_cmd();
 
@@ -183,11 +182,10 @@ int Jail::start(void* args) {
     return EXIT_SUCCESS;
 }
 
-int Jail::start_cmd(void* args) {
-    Jail* self = (Jail*) args;
+int UbuntuJail::start_cmd(void* args) {
+    auto* self = (UbuntuJail*) args;
 
-    cout << "INFO q - " << self->rootfs << endl;
-    cout << "INFO cmd  - " << self->cmd << endl;
+    cout << "INFO root - " << self->rootfs << endl;
 
     self->setup_sigint_handler();
 
@@ -210,39 +208,37 @@ int Jail::start_cmd(void* args) {
     // BUFFER OVERFLOW EXPLOIT RIGHT THERE WOHOO
     // Managed to hack process into executing inside an
     // invoked shell by starting the shell with temp rc file
-    string cmd_temp;
-    while (*self->cmd_args != nullptr) {
-        cmd_temp.append(*self->cmd_args);
-        cmd_temp.append(" ");
-        self->cmd_args++;
-    }
     FILE* startup = fopen("/.startup", "w");
     fprintf(startup, "%s\n", "source $HOME/.bashrc");
-    fprintf(startup, "%s\n", cmd_temp.c_str());
+    while (*self->cmd_args != nullptr) {
+        fprintf(startup, "%s", *self->cmd_args);
+        fprintf(startup, "%s", " ");
+        self->cmd_args++;
+    }
     fclose(startup);
 
-//    if ((cpid = execvp(("" + (string) self->cmd).c_str(), self->cmd_args)) != 0) {
     if (system("/bin/bash --init-file /.startup") <= 0) {
         panic("ERROR");
         return EXIT_FAILURE;
     }
+    remove("/.startup");
     return EXIT_SUCCESS;
 }
 
 
 template<typename ... Params>
-int Jail::run(Params ...params) {
+int UbuntuJail::run(Params ...params) {
     char* args[] = {(char*) params..., nullptr};
     return execvp(args[0], args);
 }
 
 
-void Jail::panic(const char* message) {
+void UbuntuJail::panic(const char* message) {
     std::perror(message);
     exit(-1);
 }
 
-void Jail::setup_src() {
+void UbuntuJail::setup_src() {
     system(("mkdir -p " + (string) "./rootfs/" + this->rootfs + "/src").c_str());
     if (mount("./", ((string) "./rootfs/" + this->rootfs + "/src").c_str(), "tmpfs", MS_BIND, nullptr) < 0) {
         panic("Unable to mount /src");
@@ -250,7 +246,7 @@ void Jail::setup_src() {
 }
 
 
-void Jail::setup_root(const char* root) {
+void UbuntuJail::setup_root(const char* root) {
     chroot(((string) "./rootfs/" + this->rootfs).c_str());
     chdir(root);
     if (mount("proc", "/proc", "proc", 0, nullptr) < 0) {
@@ -260,7 +256,7 @@ void Jail::setup_root(const char* root) {
 }
 
 
-void Jail::setup_variables() {
+void UbuntuJail::setup_variables() {
     clearenv();
     system(((string) "hostname " + this->rootfs).c_str());
     setenv("HOME", "/", 0);
@@ -269,7 +265,7 @@ void Jail::setup_variables() {
     setenv("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/:/src/", 0);
 }
 
-void Jail::setup_resolvconf() {
+void UbuntuJail::setup_resolvconf() {
     ofstream fp("/etc/resolv.conf");
     cout << "INFO updating resolv.conf" << endl;
     if (fp.is_open()) {
@@ -280,7 +276,7 @@ void Jail::setup_resolvconf() {
     fp.close();
 }
 
-void Jail::setup_bashrc(char* ccont_root) {
+void UbuntuJail::setup_bashrc(char* ccont_root) {
     string dir(ccont_root);
     dir = readcmd("which " + dir);
     dir = readcmd("readlink " + dir);
@@ -288,7 +284,7 @@ void Jail::setup_bashrc(char* ccont_root) {
     system(("cp " + dir + "/config/.bashrc ./rootfs/" + this->rootfs + "/").c_str());
 }
 
-char* Jail::allocate_stack(int size) {
+char* UbuntuJail::allocate_stack(int size) {
     auto* stack = new(nothrow) char[size];
     if (stack == nullptr) {
         panic("Cannot allocate stack memory");
@@ -298,14 +294,14 @@ char* Jail::allocate_stack(int size) {
     return stack + size;
 }
 
-void Jail::setup_dev() {
+void UbuntuJail::setup_dev() {
     if (mount("/dev", ("./rootfs/" + (string) this->rootfs + "/dev").c_str(), "tmpfs", MS_BIND, nullptr) < 0) {
         panic("Unable to mount /dev");
     }
     cout << "INFO mounted dev to /dev\n";
 }
 
-void Jail::setup_certs(char* ccont_root) {
+void UbuntuJail::setup_certs(char* ccont_root) {
     string dir(ccont_root);
     dir = readcmd("which " + dir);
     dir = readcmd("readlink " + dir);
@@ -313,7 +309,7 @@ void Jail::setup_certs(char* ccont_root) {
     system(("cp " + dir + "/config/ca-certificates.conf ./rootfs/" + this->rootfs + "/etc/").c_str());
 }
 
-void Jail::setup_ssldeb() {
+void UbuntuJail::setup_ssldeb() {
     string path("./rootfs/" + (string) this->rootfs + "/tmp/openssl/");
 
     char url_openssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1-1ubuntu2.1_amd64.deb";
@@ -330,18 +326,18 @@ void Jail::setup_ssldeb() {
 
     system(("mkdir -p " + path).c_str());
 
-    if (!Jail::exists(file_libssl)) {
+    if (!UbuntuJail::exists(file_libssl)) {
         system(("wget -O " + file_libssl + " " + url_libssl + " -q --show-progress").c_str());
     }
-    if (!Jail::exists(file_openssl)) {
+    if (!UbuntuJail::exists(file_openssl)) {
         system(("wget -O " + file_openssl + " " + url_openssl + " -q --show-progress").c_str());
     }
-    if (!Jail::exists(file_cacert)) {
+    if (!UbuntuJail::exists(file_cacert)) {
         system(("wget -O " + file_cacert + " " + url_cacert + " -q --show-progress").c_str());
     }
 }
 
-void Jail::setup_installssl() {
+void UbuntuJail::setup_installssl() {
 
     // if the cmd is not available installed pre-downloaded packages
     // and re-run it to update ssl certs to make apt update possible
@@ -388,7 +384,7 @@ void Jail::setup_installssl() {
 }
 
 
-string Jail::readcmd(string cmd) {
+string UbuntuJail::readcmd(string cmd) {
 
     string data;
     FILE* stream;
@@ -405,38 +401,38 @@ string Jail::readcmd(string cmd) {
     return data;
 }
 
-void Jail::setup_sigint_handler() {
+void UbuntuJail::setup_sigint_handler() {
     struct sigaction sigIntHandler{};
 
-    sigIntHandler.sa_handler = Jail::_sigint_handler;
+    sigIntHandler.sa_handler = UbuntuJail::_sigint_handler;
     sigemptyset(&sigIntHandler.sa_mask);
     sigIntHandler.sa_flags = 0;
 
     sigaction(SIGINT, &sigIntHandler, nullptr);
 }
 
-void Jail::setup_sigint_handler_cmd() {
+void UbuntuJail::setup_sigint_handler_cmd() {
     struct sigaction sigIntHandler{};
 
-    sigIntHandler.sa_handler = Jail::_sigint_handler_cmd;
+    sigIntHandler.sa_handler = UbuntuJail::_sigint_handler_cmd;
     sigemptyset(&sigIntHandler.sa_mask);
     sigIntHandler.sa_flags = 0;
 
     sigaction(SIGINT, &sigIntHandler, nullptr);
 }
 
-void Jail::_sigint_handler(int) {
+void UbuntuJail::_sigint_handler(int) {
     cout << "Handling SIGINT for " << getpid() << endl;
     sleep(1);
     exit(0);
 }
 
-void Jail::_sigint_handler_cmd(int) {
+void UbuntuJail::_sigint_handler_cmd(int) {
     cout << "Handling SIGINT for " << getpid() << endl;
     exit(0);
 }
 
-Jail::~Jail() {
+UbuntuJail::~UbuntuJail() {
     // free allocated container stack
     delete[] (this->cont_stack - this->cont_stack_size);
 
@@ -452,12 +448,10 @@ Jail::~Jail() {
         cout << "ERROR umounting /dev\n";
     }
 
-    // unmount /src | if cmd is not set then /src is not even mounted
-    if (this->cmd != nullptr) {
-        cout << "INFO umounting /src\n";
-        if (system(("umount -f ./rootfs/" + (string) this->rootfs + "/src").c_str()) < 0) {
-            cout << "ERROR umounting /src\n";
-        }
+    // unmount /src
+    cout << "INFO umounting /src\n";
+    if (system(("umount -f ./rootfs/" + (string) this->rootfs + "/src").c_str()) < 0) {
+        cout << "ERROR umounting /src\n";
     }
 }
 
