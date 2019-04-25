@@ -61,11 +61,11 @@ int main(int argc, char* args[]) {
     string dir = get_ccont_dir(args[0]);
 
     for (int i = 0; i < argc; i++) {
-        if (strcmp(args[i], "--alpine") == 0) {
+        if (strcmp(args[i], "alpine") == 0) {
             use_alpine = true;
-        } else if (strcmp(args[i], "--ubuntu") == 0) {
+        } else if (strcmp(args[i], "ubuntu") == 0) {
             use_ubuntu = true;
-        } else if (strcmp(args[i], "-e") == 0) {
+        } else if (strcmp(args[i], "-c") == 0) {
             cmd_start = i;
         }
     }
@@ -74,7 +74,7 @@ int main(int argc, char* args[]) {
         setup_ubuntucont(availRootfs.ubuntu, dir);
         if (cmd_start != 0) {
             if (cmd_start == argc - 1) {
-                cout << "ERROR please specify commands with -e flag\n";
+                cout << "ERROR please specify commands with -c flag\n";
             } else {
                 UbuntuJail jail(availRootfs.ubuntu, &args[cmd_start + 1]);
             }
@@ -85,7 +85,7 @@ int main(int argc, char* args[]) {
         setup_alpinecont(availRootfs.alpine, dir);
         if (cmd_start != 0) {
             if (cmd_start == argc - 1) {
-                cout << "ERROR please specify commands with -e flag\n";
+                cout << "ERROR please specify commands with -c flag\n";
             } else {
                 AlpineJail jail(availRootfs.alpine, &args[cmd_start + 1]);
             }
@@ -155,7 +155,7 @@ void print_help() {
     printf("Ccont 0.0.1 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
     printf("Usage:\n");
     printf(_HELPFORMAT, "ccont <rootfs>", "start a <rootfs> container");
-    printf(_HELPFORMAT, "ccont <rootfs> -e <cmd> [args]", "start a <rootfs> container and execute");
+    printf(_HELPFORMAT, "ccont <rootfs> -c <cmd> [args]", "start a <rootfs> container and execute");
     printf(_HELPFORMAT, "", "command <cmd> with arguments [args]");
     printf(_HELPFORMAT, "ccont --list, -l", "print a list of available file systems");
     printf(_HELPFORMAT, "ccont --help, -h", "print this message");
@@ -164,8 +164,8 @@ void print_help() {
 void print_rootfs() {
     printf("Ccont 0.0.1 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
     printf("Available root file systems:\n");
-    printf(_HELPFORMAT, "--ubuntu", "Ubuntu 18.10");
-    printf(_HELPFORMAT, "--alpine", "Alpine 3.9.3");
+    printf(_HELPFORMAT, "ubuntu", "Ubuntu 18.10");
+    printf(_HELPFORMAT, "alpine", "Alpine 3.9.3");
 }
 
 string get_ccont_dir(char* arg0) {

@@ -18,7 +18,7 @@ using namespace std;
 
 class AlpineJail {
 public:
-    explicit AlpineJail(const char*, char* const);
+    explicit AlpineJail(const char*, char*);
 
     explicit AlpineJail(const char*, char* const*);
 
@@ -41,9 +41,9 @@ public:
     static string readcmd(string cmd);
 
 private:
-    void setup_sigint_handler();
+    static void setup_sigint_handler();
 
-    void setup_sigint_handler_cmd();
+    static void setup_sigint_handler_cmd();
 
     static void _sigint_handler(int);
 
@@ -57,11 +57,9 @@ private:
 
     void setup_bash();
 
-    void setup_certs(char*);
+    static void setup_resolvconf();
 
-    void setup_resolvconf();
-
-    void setup_dev();
+    static void setup_dev();
 
     void setup_src();
 
@@ -95,9 +93,6 @@ AlpineJail::AlpineJail(const char* rootfs, char* const arg) {
     // stack for container
     this->cont_stack = allocate_stack();
 
-    // bind /dev to container /dev
-    this->setup_dev();
-
     // small bashrc for colorful terminal
     this->setup_bashrc(arg);
 
@@ -114,7 +109,7 @@ AlpineJail::AlpineJail(const char* rootfs, char* const arg) {
 
 AlpineJail::AlpineJail(const char* rootfs, char* const* args) {
     if (args == nullptr) {
-        panic("ERROR -e specified with no command");
+        panic("ERROR -c specified with no command");
     }
     char buf[128];
     char callcmd[] = "ccont";
@@ -123,13 +118,10 @@ AlpineJail::AlpineJail(const char* rootfs, char* const* args) {
     this->rootfs = rootfs;
     this->cmd_args = (char**) args;
 
-    this->setup_sigint_handler();
+    AlpineJail::setup_sigint_handler();
 
     // allocate stack for container
     this->cont_stack = allocate_stack();
-
-    // bind /dev to container /dev
-    this->setup_dev();
 
     this->setup_bashrc(callcmd);
 
@@ -153,17 +145,20 @@ AlpineJail::AlpineJail(const char* rootfs, char* const* args) {
 int AlpineJail::start(void* args) {
     auto* self = (AlpineJail*) args;
 
-    self->setup_sigint_handler_cmd();
+    AlpineJail::setup_sigint_handler_cmd();
 
     self->setup_variables();
 
     self->setup_root();
+
+    AlpineJail::setup_dev();
+
     cout << "INFO mounted proc to /proc\n";
 
     cout << "INFO container PID: " << getpid() << endl;
 
     // setup nameservers for internet access
-    self->setup_resolvconf();
+    AlpineJail::setup_resolvconf();
 
     self->setup_bash();
 
@@ -179,17 +174,20 @@ int AlpineJail::start_cmd(void* args) {
 
     cout << "INFO root - " << self->rootfs << endl;
 
-    self->setup_sigint_handler();
+    AlpineJail::setup_sigint_handler();
 
     self->setup_variables();
 
     self->setup_root("/src");
+
+    AlpineJail::setup_dev();
+
     cout << "INFO mounted proc to /proc\n";
 
     cout << "INFO container PID: " << getpid() << endl;
 
     // setup nameservers for internet access
-    self->setup_resolvconf();
+    AlpineJail::setup_resolvconf();
 
     self->setup_bash();
 
@@ -252,18 +250,11 @@ void AlpineJail::setup_variables() {
     setenv("HOME", "/", 0);
     setenv("DISPLAY", ":0.0", 0);
     setenv("TERM", "xterm-256color", 0);
-    setenv("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/:/src/", 0);
+    setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin:/src:/usr/local/bin:/usr/local/sbin", 0);
 }
 
 void AlpineJail::setup_resolvconf() {
-    ofstream fp("/etc/resolv.conf");
-    cout << "INFO updating resolv.conf" << endl;
-    if (fp.is_open()) {
-        fp << "nameserver 8.8.8.8\nnameserver 8.4.4.2\n";
-    } else {
-        cout << "ERROR unable to open resolv.conf" << endl;
-    }
-    fp.close();
+    system("echo \"nameserver 8.8.8.8\n nameserver 8.4.4.2\n\" > /etc/resolv.conf");
 }
 
 void AlpineJail::setup_bashrc(char* ccont_root) {
@@ -285,18 +276,28 @@ char* AlpineJail::allocate_stack(int size) {
 }
 
 void AlpineJail::setup_dev() {
-    if (mount("/dev", ("./rootfs/" + (string) this->rootfs + "/dev").c_str(), "tmpfs", MS_BIND, nullptr) < 0) {
-        panic("Unable to mount /dev");
-    }
-    cout << "INFO mounted dev to /dev\n";
-}
+    system("mount -ntv tmpfs none /dev");
 
-void AlpineJail::setup_certs(char* ccont_root) {
-    string dir(ccont_root);
-    dir = readcmd("which " + dir);
-    dir = readcmd("readlink " + dir);
-    dir = dirname((char*) dir.c_str());
-    system(("cp " + dir + "/config/ca-certificates.conf ./rootfs/" + this->rootfs + "/etc/").c_str());
+    system("mknod -m 622 /dev/console c 5 1");
+    system("mknod -m 666 /dev/null c 1 3");
+    system("mknod -m 666 /dev/zero c 1 5");
+    system("mknod -m 666 /dev/ptmx c 5 2");
+    system("mknod -m 666 /dev/tty c 5 0");
+    system("mknod -m 444 /dev/random c 1 8");
+    system("mknod -m 444 /dev/urandom c 1 9");
+
+    system("chown -v root:tty /dev/console");
+    system("chown -v root:tty /dev/ptmx");
+    system("chown -v root:tty /dev/tty");
+
+    system("ln -sv /proc/self/fd /dev/fd");
+    system("ln -sv /proc/self/fd/0 /dev/stdin");
+    system("ln -sv /proc/self/fd/1 /dev/stdout");
+    system("ln -sv /proc/self/fd/2 /dev/stderr");
+    system("ln -sv /proc/kcore /dev/core");
+
+    system("mkdir -v /dev/pts");
+    system("mkdir -v /dev/shm");
 }
 
 string AlpineJail::readcmd(string cmd) {

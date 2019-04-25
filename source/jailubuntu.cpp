@@ -17,7 +17,7 @@ using namespace std;
 
 class UbuntuJail {
 public:
-    explicit UbuntuJail(const char*, char* const);
+    explicit UbuntuJail(const char*, char*);
 
     explicit UbuntuJail(const char*, char* const*);
 
@@ -40,9 +40,9 @@ public:
     static string readcmd(string cmd);
 
 private:
-    void setup_sigint_handler();
+    static void setup_sigint_handler();
 
-    void setup_sigint_handler_cmd();
+    static void setup_sigint_handler_cmd();
 
     static void _sigint_handler(int);
 
@@ -54,15 +54,9 @@ private:
 
     void setup_bashrc(char*);
 
-    void setup_certs(char*);
+    static void setup_resolvconf();
 
-    void setup_resolvconf();
-
-    void setup_ssldeb();
-
-    void setup_installssl();
-
-    void setup_dev();
+    static void setup_dev();
 
     void setup_src();
 
@@ -96,17 +90,8 @@ UbuntuJail::UbuntuJail(const char* rootfs, char* const arg) {
     // stack for container
     this->cont_stack = allocate_stack();
 
-    // bind /dev to container /dev
-    this->setup_dev();
-
     // small bashrc for colorful terminal
     this->setup_bashrc(arg);
-
-    // copy default certs to container
-    this->setup_certs(arg);
-
-    // pre-download required .deb packages to install ca-certificates
-    this->setup_ssldeb();
 
     // flags to clone process tree and unix time sharing
     if ((cpid = clone(UbuntuJail::start, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
@@ -121,7 +106,7 @@ UbuntuJail::UbuntuJail(const char* rootfs, char* const arg) {
 
 UbuntuJail::UbuntuJail(const char* rootfs, char* const* args) {
     if (args == nullptr) {
-        panic("ERROR -e specified with no command");
+        panic("ERROR -c specified with no command");
     }
     char buf[128];
     char callcmd[] = "ccont";
@@ -130,13 +115,10 @@ UbuntuJail::UbuntuJail(const char* rootfs, char* const* args) {
     this->rootfs = rootfs;
     this->cmd_args = (char**) args;
 
-    this->setup_sigint_handler();
+    UbuntuJail::setup_sigint_handler();
 
     // allocate stack for container
     this->cont_stack = allocate_stack();
-
-    // bind /dev to container /dev
-    this->setup_dev();
 
     this->setup_bashrc(callcmd);
 
@@ -160,20 +142,20 @@ UbuntuJail::UbuntuJail(const char* rootfs, char* const* args) {
 int UbuntuJail::start(void* args) {
     auto* self = (UbuntuJail*) args;
 
-    self->setup_sigint_handler_cmd();
+    UbuntuJail::setup_sigint_handler_cmd();
 
     self->setup_variables();
 
     self->setup_root();
+
+    UbuntuJail::setup_dev();
+
     cout << "INFO mounted proc to /proc\n";
 
     cout << "INFO container PID: " << getpid() << endl;
 
     // setup nameservers for internet access
-    self->setup_resolvconf();
-
-    // install pre-downloaded ssl packages
-    self->setup_installssl();
+    UbuntuJail::setup_resolvconf();
 
     if (self->run("/bin/bash") != 0) {
         perror("ERROR");
@@ -187,20 +169,20 @@ int UbuntuJail::start_cmd(void* args) {
 
     cout << "INFO root - " << self->rootfs << endl;
 
-    self->setup_sigint_handler();
+    UbuntuJail::setup_sigint_handler();
 
     self->setup_variables();
 
     self->setup_root("/src");
+
+    UbuntuJail::setup_dev();
+
     cout << "INFO mounted proc to /proc\n";
 
     cout << "INFO container PID: " << getpid() << endl;
 
     // setup nameservers for internet access
-    self->setup_resolvconf();
-
-    // install pre-downloaded ssl packages
-    self->setup_installssl();
+    UbuntuJail::setup_resolvconf();
 
     // go back to src after doing installtls
     chdir("/src");
@@ -262,18 +244,11 @@ void UbuntuJail::setup_variables() {
     setenv("HOME", "/", 0);
     setenv("DISPLAY", ":0.0", 0);
     setenv("TERM", "xterm-256color", 0);
-    setenv("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/:/src/", 0);
+    setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin:/src:/usr/local/bin:/usr/local/sbin", 0);
 }
 
 void UbuntuJail::setup_resolvconf() {
-    ofstream fp("/etc/resolv.conf");
-    cout << "INFO updating resolv.conf" << endl;
-    if (fp.is_open()) {
-        fp << "nameserver 8.8.8.8\nnameserver 8.4.4.2\n";
-    } else {
-        cout << "ERROR unable to open resolv.conf" << endl;
-    }
-    fp.close();
+    system("echo \"nameserver 8.8.8.8\n nameserver 8.4.4.2\n\" > /etc/resolv.conf");
 }
 
 void UbuntuJail::setup_bashrc(char* ccont_root) {
@@ -295,94 +270,32 @@ char* UbuntuJail::allocate_stack(int size) {
 }
 
 void UbuntuJail::setup_dev() {
-    if (mount("/dev", ("./rootfs/" + (string) this->rootfs + "/dev").c_str(), "tmpfs", MS_BIND, nullptr) < 0) {
-        panic("Unable to mount /dev");
-    }
-    cout << "INFO mounted dev to /dev\n";
+    system("mount -n -vt tmpfs none /dev");
+
+    system("mknod -m 622 /dev/console c 5 1");
+    system("mknod -m 666 /dev/null c 1 3");
+    system("mknod -m 666 /dev/zero c 1 5");
+    system("mknod -m 666 /dev/ptmx c 5 2");
+    system("mknod -m 666 /dev/tty c 5 0");
+    system("mknod -m 444 /dev/random c 1 8");
+    system("mknod -m 444 /dev/urandom c 1 9");
+
+    system("chown -v root:tty /dev/console");
+    system("chown -v root:tty /dev/ptmx");
+    system("chown -v root:tty /dev/tty");
+
+    system("ln -sv /proc/self/fd /dev/fd");
+    system("ln -sv /proc/self/fd/0 /dev/stdin");
+    system("ln -sv /proc/self/fd/1 /dev/stdout");
+    system("ln -sv /proc/self/fd/2 /dev/stderr");
+    system("ln -sv /proc/kcore /dev/core");
+
+    system("mkdir -v /dev/pts");
+    system("mkdir -v /dev/shm");
+
+    // system("mount -vt devpts -o gid=4,mode=620 none /dev/pts");
+    // system("mount -vt tmpfs none /dev/shm");
 }
-
-void UbuntuJail::setup_certs(char* ccont_root) {
-    string dir(ccont_root);
-    dir = readcmd("which " + dir);
-    dir = readcmd("readlink " + dir);
-    dir = dirname((char*) dir.c_str());
-    system(("cp " + dir + "/config/ca-certificates.conf ./rootfs/" + this->rootfs + "/etc/").c_str());
-}
-
-void UbuntuJail::setup_ssldeb() {
-    string path("./rootfs/" + (string) this->rootfs + "/tmp/openssl/");
-
-    char url_openssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1-1ubuntu2.1_amd64.deb";
-    char url_libssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/openssl_1.1.1-1ubuntu2.1_amd64.deb";
-    char url_cacert[] = "http://mirrors.kernel.org/ubuntu/pool/main/c/ca-certificates/ca-certificates_20180409_all.deb";
-
-    string base_openssl(basename(url_openssl));
-    string base_libssl(basename(url_libssl));
-    string base_cacert(basename(url_cacert));
-
-    string file_openssl(path + base_openssl);
-    string file_libssl(path + base_libssl);
-    string file_cacert(path + base_cacert);
-
-    system(("mkdir -p " + path).c_str());
-
-    if (!UbuntuJail::exists(file_libssl)) {
-        system(("wget -O " + file_libssl + " " + url_libssl + " -q --show-progress").c_str());
-    }
-    if (!UbuntuJail::exists(file_openssl)) {
-        system(("wget -O " + file_openssl + " " + url_openssl + " -q --show-progress").c_str());
-    }
-    if (!UbuntuJail::exists(file_cacert)) {
-        system(("wget -O " + file_cacert + " " + url_cacert + " -q --show-progress").c_str());
-    }
-}
-
-void UbuntuJail::setup_installssl() {
-
-    // if the cmd is not available installed pre-downloaded packages
-    // and re-run it to update ssl certs to make apt update possible
-    if (system("update-ca-certificates > /dev/null")) {
-        chdir("/tmp/openssl/");
-        char url_libssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1-1ubuntu2.1_amd64.deb";
-        char url_openssl[] = "http://security.ubuntu.com/ubuntu/pool/main/o/openssl/openssl_1.1.1-1ubuntu2.1_amd64.deb";
-        char url_cacert[] = "http://mirrors.kernel.org/ubuntu/pool/main/c/ca-certificates/ca-certificates_20180409_all.deb";
-
-        string base_libssl(basename(url_libssl));
-        string base_openssl(basename(url_openssl));
-        string base_cacert(basename(url_cacert));
-
-        cout << base_libssl << endl;
-        cout << base_openssl << endl;
-        cout << base_cacert << endl;
-
-        cout << "INFO installing libssl\n";
-        if (system(("dpkg -i " + base_libssl + " 2> /dev/null").c_str()) < 0) {
-            cout << "ERROR unable to install libssl\n";
-        } else {
-            cout << "INFO installed libssl;\n";
-        }
-
-        cout << "INFO installing openssl\n";
-        if (system(("dpkg -i " + base_openssl + " 2> /dev/null").c_str()) < 0) {
-            cout << "ERROR unable to install openssl\n";
-        } else {
-            cout << "INFO installed openssl\n";
-        }
-
-        cout << "INFO installing ca-certificates\n";
-        if (system(("dpkg -i " + base_cacert + " 2> /dev/null").c_str()) < 0) {
-            cout << "ERROR unable to install ca-certificates\n";
-        } else {
-            cout << "INFO installed ca-certificates\n";
-        }
-        system("update-ca-certificates");
-        chdir("/");
-        cout << "INFO running apt update";
-        system("apt update 2> /dev/null");
-        cout << "INFO done";
-    }
-}
-
 
 string UbuntuJail::readcmd(string cmd) {
 
