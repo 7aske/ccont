@@ -17,9 +17,11 @@
 
 using namespace std;
 
-void Jail::init(char* const name, char* const args) {
-	this->setName(string(name));
+void Jail::init(char* const cont_name, char* const cont_id) {
+	this->setId(cont_id);
+	this->setName(string(cont_name).append("-").append(cont_id));
 	this->setContRoot(string(this->getRoot()).append("/containers/").append(this->getName()));
+
 	int cpid;
 
 	// stack for container
@@ -29,7 +31,8 @@ void Jail::init(char* const name, char* const args) {
 	this->setup_bashrc();
 
 	// flags to clone process tree and unix time sharing
-	if ((cpid = clone(Jail::start, this->cont_stack, CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, (void*) this)) <= 0) {
+	unsigned int flags = CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD;
+	if ((cpid = clone(Jail::start, this->cont_stack, flags, (void*) this)) <= 0) {
 		errno = EIO;
 		panic("Error cloning process");
 	} else {
@@ -40,12 +43,13 @@ void Jail::init(char* const name, char* const args) {
 	wait(nullptr);
 }
 
-void Jail::init(char* const cont_name, char* const* args) {
+void Jail::init(char* const cont_name, char* const* args, char* const cont_id) {
 	if (args == nullptr) {
 		errno = EINVAL;
 		panic("ERROR -c specified with no command");
 	}
-	this->setName(string(cont_name));
+	this->setId(cont_id);
+	this->setName(string(cont_name).append("-").append(cont_id));
 	this->setContRoot(string(this->getRoot()).append("/containers/").append(this->getName()));
 
 	char buf[128];
@@ -64,9 +68,8 @@ void Jail::init(char* const cont_name, char* const* args) {
 	cout << "INFO mounted " << buf << " to /src\n";
 
 	// flags to clone process tree and unix time sharing
-	int flags = CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD;
-	if ((cpid = clone(Jail::start_cmd, this->cont_stack, flags, (void*) this)) <=
-		0) {
+	unsigned int flags = CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD;
+	if ((cpid = clone(Jail::start_cmd, this->cont_stack, flags, (void*) this)) <= 0) {
 		panic("Error cloning process");
 	} else {
 		cout << "INFO container PID: " << cpid << endl;
@@ -90,8 +93,8 @@ int Jail::start(void* args) {
 	// setup nameservers for internet access
 	Jail::setup_resolvconf();
 
-	if (self->name == "alpine") {
-		system("apk add bash");
+	if (strncmp((char* const) (self->name.c_str()), "alpine", 6) == 0) {
+		system("apk add bash &> /dev/null");
 	}
 
 	if (self->run("/bin/bash") != 0) {
@@ -115,8 +118,8 @@ int Jail::start_cmd(void* args) {
 	// setup nameservers for internet access
 	Jail::setup_resolvconf();
 
-	if (self->name == "alpine") {
-		system("apk add bash");
+	if (strncmp((char* const) (self->name.c_str()), "alpine", 6) == 0) {
+		system("apk add bash &> /dev/null");
 	}
 
 	// go back to src after doing installtls
@@ -159,7 +162,9 @@ void Jail::setup_src() {
 
 
 void Jail::setup_root() {
-	chroot(this->getContRoot().c_str());
+	if (chroot(this->getContRoot().c_str()) == -1) {
+		panic("ERROR chroot");
+	}
 	chdir("/");
 	if (mount("proc", "/proc", "proc", 0, nullptr) < 0) {
 		panic("Unable to mount /proc");
@@ -184,7 +189,7 @@ void Jail::setup_resolvconf() {
 void Jail::setup_bashrc() {
 	char buf[256];
 	memset(buf, 0, 256);
-	sprintf(buf, "cp %s/config/.bashrc %s", this->root.c_str(), this->cont_root.c_str());
+	sprintf(buf, "cp -n %s/config/.bashrc %s", this->root.c_str(), this->cont_root.c_str());
 	system(buf);
 }
 
@@ -217,23 +222,6 @@ void Jail::setup_dev() {
 	// system("mount -vt tmpfs none /dev/shm");
 }
 
-string Jail::readcmd(string cmd) {
-
-	FILE* stream;
-	string out;
-	const int max_buffer = 1024;
-	char buffer[max_buffer];
-	cmd.append(" 2>&1");
-
-	stream = popen(cmd.c_str(), "r");
-	if (stream) {
-		while (!feof(stream))
-			if (fgets(buffer, max_buffer, stream) != nullptr) out.append(buffer);
-		pclose(stream);
-	}
-	return out;
-}
-
 char* Jail::allocate_stack(int size) {
 	char* stack = (char*) malloc(size);
 	if (stack == nullptr) {
@@ -250,16 +238,6 @@ void Jail::panic(const char* message) {
 	exit(-1);
 }
 
-string Jail::get_location(char* const cmd) {
-	string dir_cmd(cmd);
-	dir_cmd.insert(0, "which ");
-	dir_cmd = readcmd(dir_cmd);
-
-	dir_cmd.insert(0, "readlink ");
-	return readcmd(dir_cmd);
-
-}
-
 
 Jail::~Jail() {
 	// free allocated container stack
@@ -267,13 +245,13 @@ Jail::~Jail() {
 
 	// unmount container /proc from outside
 	cout << "INFO umounting /proc\n";
-	if (system(("umount -f " + this->getContRoot() + "/proc").c_str()) < 0) {
+	if (system(("umount -f " + this->getContRoot() + "/proc &> /dev/null").c_str()) < 0) {
 		cout << "ERROR umounting /proc\n";
 	}
 
 	// unmount container /dev from outside
 	cout << "INFO umounting /dev\n";
-	if (system(("umount " + this->getContRoot() + "/dev").c_str()) < 0) {
+	if (system(("umount " + this->getContRoot() + "/dev &> /dev/null").c_str()) < 0) {
 		cout << "ERROR umounting /dev\n";
 	}
 
@@ -287,17 +265,29 @@ Jail::~Jail() {
 		cout << "INFO building container image" << "\n";
 		char buf[256];
 		string dir("./");
-		dir = dir.append("cache/");
-		dir = dir.append(this->getName());
-		dir = dir.append(".tar.gz");
+		dir.append("cache/build/");
+		system(("mkdir -p " + dir).c_str());
+		dir.append(this->getName());
+		dir.append(".tar.gz");
 		sprintf(buf, "tar -czf %s -C %s .", dir.c_str(), this->getContRoot().c_str());
 		system(buf);
+		cout << "INFO saved container " << this->getName() << "\n";
 	}
 
 	if (this->isRmCont()) {
 		cout << "INFO removing root dir" << "\n";
 		system(("rm -rf " + this->getContRoot()).c_str());
 	}
-
+	unsigned int flags = S_IRWXU | S_IRWXG | S_IROTH;
+	chmod((const char*) (this->cont_root.c_str()), flags);
 }
 
+ostream &operator<<(ostream &os, const Jail &jail) {
+	os << "rm_cont: " << jail.rm_cont << "\nbuild_cont: " << jail.build_cont << "\nroot: " << jail.root
+	   << "\ncont_root: "
+	   << jail.cont_root << "\nname: " << jail.name << "\nid: " << jail.id << "\nargv0: " << jail.argv0
+	   << "\ncmd_args: "
+	   << jail.cmd_args << "\ncont_stack: " << &(jail.cont_stack) << "\ncont_stack_size: " << jail.cont_stack_size
+	   << "\n";
+	return os;
+}

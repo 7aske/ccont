@@ -1,4 +1,6 @@
 
+#include <ostream>
+
 using namespace std;
 
 class Jail {
@@ -9,7 +11,7 @@ public:
 
 	void init(char*, char*);
 
-	void init(char*, char* const*);
+	void init(char*, char* const*, char*);
 
 	~Jail();
 
@@ -26,10 +28,6 @@ public:
 			return false;
 		}
 	}
-
-	static string readcmd(string);
-
-	static string get_location(char*);
 
 	const string &getContRoot() const;
 
@@ -58,6 +56,12 @@ public:
 	char* getArgv0() const;
 
 	void setArgv0(char* argv0);
+
+	const string &getId() const;
+
+	void setId(const char* id);
+
+	friend ostream &operator<<(ostream &os, const Jail &jail);
 
 private:
 	void setup_variables();
@@ -89,6 +93,7 @@ private:
 	string root;
 	string cont_root = "";
 	string name;
+	string id;
 
 	char* argv0;
 
@@ -97,12 +102,20 @@ private:
 	long cont_stack_size = 65536;
 };
 
+const string &Jail::getId() const {
+	return id;
+}
+
+void Jail::setId(const char* id) {
+	Jail::id = string(id);
+}
+
 char* Jail::getArgv0() const {
 	return argv0;
 }
 
-void Jail::setArgv0(char* argv0) {
-	Jail::argv0 = argv0;
+void Jail::setArgv0(char* argv) {
+	Jail::argv0 = argv;
 }
 
 bool Jail::isBuildCont() const {
