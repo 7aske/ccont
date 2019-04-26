@@ -4,3 +4,5 @@ rootfs/
 ccont
 *.tar.xz
 *.tar.gz
+containers/
+tmp/
