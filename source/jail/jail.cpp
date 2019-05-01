@@ -264,8 +264,8 @@ Jail::~Jail() {
 	if (this->isBuildCont()) {
 		cout << "INFO building container image" << "\n";
 		char buf[256];
-		string dir("./");
-		dir.append("cache/build/");
+		string dir(this->getRoot());
+		dir.append("/cache/build/");
 		system(("mkdir -p " + dir).c_str());
 		dir.append(this->getName());
 		dir.append(".tar.gz");
