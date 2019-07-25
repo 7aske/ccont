@@ -1,21 +1,68 @@
-ccont
-==========================
-
+# Ccont
 
 ## Description
-Linux container implementation using chroot and C++.
 
+Linux container implementation using chroot and C++. Can be used to safely containerize an application in for testing or production purposes. Implemented based on what I think Docker uses behind the scenes for basic containerization.
 
+ Process which ```Ccont``` automates is downloading a specified Linux rootfs and and then extracts it to a, optionally non-persistent - see ```Usage```, folder where all the required mount points are established (proc, sys, dev etc...).
+
+After setup user is dropped into a root `bash` shell running in the containerized environment. ```Ccont``` has the ability to upon successful setup immediately execute a command inside the container root shell which can be useful to for example run servers more easily. Command is passed to the `bash` shell with `-c` argument so it can be used to create more advanced startup procedures.
+
+At shell logout all the mount points are released and sanitized.
 
 ## Usage
 
-``# ./ccont``
+``# ccont --help``
 
-Must be started as root. Automatically downloads basic Ubuntu rootfs and extracts it to a folder.
-Proceeds to do additional setup to make internet connections and SSL certificates available. After setup up process user is dropped into the container's shell
-with root access.
----
+    Usage:
+    ccont <rootfs> [opts]           start a <rootfs> container
+    ccont <rootfs> -c <cmd> [args]  start a <rootfs> container and execute command <cmd> with arguments [args]
+
+    Options:
+    --rm                            removes container after exiting
+    --build, -b                     builds an image of the container after exiting
+
+    ccont --list, -l                print a list of available file systems
+    ccont --help, -h                print this message
+
+`# ccont ubuntu`
+
+Drops user into a containerized ubuntu rootfs container
+
+`# ccont ubuntu --rm`
+
+Same as the command above but removes the container mount folder after exiting the shell.
+
+`# ccont ubuntu -b`
+
+Starts the container in build mode. Build mode compresses the image after exiting the shell. Which in turn allows it to be reused. Useful when you want to install dependencies for the program that you will run inside the container. User is asked for a name of the container. If blank random ID will be generated. Builds are saved to `./cache/builds`.
+
+`# ccont ubuntu-af3r1 -c node server.js`
+
+Starts the container `ubuntu-af3r1` and runs `node` with argument `server.js` which will be successful if the node was preinstalled in the `ubuntu-af3r1` container using `-b` option. Note that every usage of `-c` option mounts the current working directory which can lead to undefined behavior if the `ccont` directory is being mounted.
+
+`# ccont ubuntu-af3r1 -c bash`
+
+This is workaround to mount the current working directory without executing any specific command. Result will be a double shell but the current working directory will be successfully mounted to `/src` of the container.
+
+## Build
+
+```$ make```
+
+Compiles `Ccont` using the available `g++` compiler.
+
+```# make install```
+
+Creates a symlink to the `ccont` executable in the current directory.
 
 ## Requirements
 
-Setup process uses `wget` and `tar`.
+Must be run as root on a Unix based machine.
+
+Compilation uses GNU `g++`.
+
+Container setup process uses `wget` and `tar`.
+
+## Contribution
+
+I really need insight into how virtualized networks operate under Linux to allow multiple processes to use the same port on a single device. If you can help feel free to contact me. Otherwise any type of contribution is welcome.
