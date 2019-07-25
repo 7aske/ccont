@@ -25,7 +25,7 @@ void setup_cont_image(const char*, string);
 
 void setup_cont_image_prebuilt(const char* bname, string d);
 
-void print_rootfs(string &);
+void print_rootfs(string&);
 
 void print_help();
 
@@ -35,6 +35,12 @@ int main(int argc, char* args[]) {
 	string root(dirname((char* const) path::abs(args[0]).c_str()));
 	string build(root);
 	build.append("/cache/build");
+
+	if (argc ==  1){
+		print_help();
+		return 0;
+	}
+
 	for (int i = 0; i < argc; i++) {
 		if (strcmp(args[i], "--help") == 0 || strcmp(args[i], "-h") == 0) {
 			print_help();
@@ -47,13 +53,13 @@ int main(int argc, char* args[]) {
 	if (getuid() != 0) {
 		panic("ERROR", EACCES);
 	}
-	Jail jail;
 	bool image_selected = false;
 	bool prebuilt = false;
+	bool rm_cont = false;
+	bool build_cont = false;
 	char image_name[64];
-	memset(&image_name, 0, 64);
+	memset(image_name, 0, 64);
 	int cmd_start = 0;
-
 
 	for (int i = 0; i < argc; i++) {
 		if (strcmp(args[i], "alpine") == 0) {
@@ -66,17 +72,19 @@ int main(int argc, char* args[]) {
 			cmd_start = i;
 			break;
 		} else if (strcmp(args[i], "--rm") == 0) {
-			jail.setRmCont(true);
+			rm_cont = true;
 		} else if (strcmp(args[i], "--build") == 0 || strcmp(args[i], "-b") == 0) {
-			jail.setBuildCont(true);
+			build_cont = true;
 		} else if (dir::contains(build, args[i])) {
 			image_selected = true;
 			prebuilt = true;
 			strncpy(image_name, args[i], strlen(args[i]));
 		}
 	}
-	cout << image_name << endl;
+
 	if (image_selected) {
+		cout << image_name << endl;
+		Jail jail;
 		string id;
 		if (prebuilt) {
 			setup_cont_image_prebuilt(image_name, root);
@@ -85,8 +93,8 @@ int main(int argc, char* args[]) {
 			id = string(p + 1);
 		} else {
 			srand(time(nullptr));
-			string inpbuf = "";
-			if (jail.isBuildCont()){
+			string inpbuf;
+			if (jail.isBuildCont()) {
 				cout << "Enter container ID (empty for random): ";
 				getline(cin, inpbuf);
 			}
@@ -103,6 +111,8 @@ int main(int argc, char* args[]) {
 			setup_cont_image(buf, root);
 		}
 
+		jail.setRmCont(rm_cont);
+		jail.setBuildCont(build_cont);
 		jail.setArgv0(args[0]);
 		jail.setRoot(root);
 
@@ -118,9 +128,9 @@ int main(int argc, char* args[]) {
 	} else {
 		cout << "ERROR please specify a rootfs\n\n";
 		print_rootfs(build);
-		return EXIT_FAILURE;
+		return 1;
 	}
-	return EXIT_SUCCESS;
+	return 0;
 }
 
 void setup_cont_image_prebuilt(const char* bname, string d) {
@@ -183,7 +193,7 @@ void setup_cont_image(const char* bname, string d) {
 		}
 		char buf[64];
 		sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname.c_str(), cont_folder.c_str());
-		if(system(buf) != 0){
+		if (system(buf) != 0) {
 			panic("ERROR tar", EIO);
 		} else {
 			cout << "INFO extracted " << bname << "\n";
@@ -205,7 +215,7 @@ void print_help() {
 	printf(_HELPFORMAT, "ccont --help, -h", "print this message");
 }
 
-void print_rootfs(string &root) {
+void print_rootfs(string& root) {
 	printf("Ccont 0.0.1 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
 	printf("Available root file systems:\n");
 	printf(_HELPFORMAT, "ubuntu", "Ubuntu 18.10");
@@ -221,16 +231,17 @@ void print_rootfs(string &root) {
 				char* p;
 				strcpy(noext, dir->d_name);
 				p = strchr(noext, '.');
-				*p = '\0';
-				printf(_HELPFORMAT, noext, dir->d_name);
+				if (p != nullptr) {
+					*p = '\0';
+					printf(_HELPFORMAT, noext, dir->d_name);
+				}
 			}
 		}
-		closedir(dirp);
 	}
 }
 
 void panic(const char* message, int err) {
 	errno = err;
 	std::perror(message);
-	exit(EXIT_FAILURE);
+	exit(1);
 }

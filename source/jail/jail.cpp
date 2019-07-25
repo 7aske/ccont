@@ -282,7 +282,7 @@ Jail::~Jail() {
 	chmod((const char*) (this->cont_root.c_str()), flags);
 }
 
-ostream &operator<<(ostream &os, const Jail &jail) {
+ostream& operator<<(ostream& os, const Jail& jail) {
 	os << "rm_cont: " << jail.rm_cont << "\nbuild_cont: " << jail.build_cont << "\nroot: " << jail.root
 	   << "\ncont_root: "
 	   << jail.cont_root << "\nname: " << jail.name << "\nid: " << jail.id << "\nargv0: " << jail.argv0
