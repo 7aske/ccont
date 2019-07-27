@@ -3,82 +3,76 @@
 #include <string.h>
 #include <pthread.h>
 
-namespace exec {
-	std::string readcmd(std::string cmd) {
-		FILE* stream;
-		std::string out;
-		const int max_buffer = 1024;
-		char buffer[max_buffer];
-		cmd.append(" 2>&1");
 
-		stream = popen(cmd.c_str(), "r");
-		if (stream) {
-			while (!feof(stream))
-				if (fgets(buffer, max_buffer, stream) != nullptr) out.append(buffer);
-			pclose(stream);
-		}
-		return out;
+int exists_stat(char const* pathname) {
+	struct stat fileStat;
+	return stat(pathname, &fileStat) == 0;
+}
+
+int exists(char const* pathname) {
+	FILE* file = fopen(pathname, "r");
+	if (file) {
+		fclose(file);
+		return 1;
+	} else {
+		return 0;
 	}
 }
 
-namespace path {
-	bool exists_stat(const char* name) {
-		struct stat fileStat{};
-		return stat(name, &fileStat) == 0;
+char* abspth(char* const cmd) {
+	char* out = (char*) calloc(128, sizeof(char));
+	char buf[128];
+	struct stat statbuf;
+
+	strcpy(buf, "which ");
+	strcat(buf, cmd);
+
+	FILE* pid = popen(buf, "r");
+	memset(buf, 0, 128);
+
+	if (pid) {
+		fread(out, sizeof(char), 128, pid);
+		*strrchr(out, '\n') = '\0';
 	}
 
-	bool exists_stat(std::string &name) {
-		return exists_stat(name.c_str());
-	}
+	lstat(out, &statbuf);
+	if (S_ISLNK(statbuf.st_mode)){
+		char* readlink = "readlink ";
 
+		strcpy(buf, readlink);
+		strcat(buf, out);
+		memset(out, 0, 128);
 
-	bool exists(const char* name) {
-		if (FILE* file = fopen(name, "r")) {
-			fclose(file);
-			return true;
-		} else {
-			return false;
+		FILE* pid2 = popen(buf, "r");
+		if (pid2) {
+			fread(out, sizeof(char), 128, pid2);
+			*strrchr(out, '\n') = '\0';
 		}
 	}
-
-	bool exists(const std::string &name) {
-		return exists(name.c_str());
-	}
-
-	std::string abs(char* const cmd) {
-		std::string dir_cmd(cmd);
-		dir_cmd.insert(0, "which ");
-		dir_cmd = exec::readcmd(dir_cmd);
-		dir_cmd.insert(0, "readlink ");
-		return exec::readcmd(dir_cmd);
-	}
-
+	return out;
 }
 
-namespace dir {
-	bool contains(std::string &path, char* const fname) {
-		struct dirent* dir;
-		DIR* dirp;
-		if ((dirp = opendir(path.c_str())) != nullptr) {
-			while ((dir = readdir(dirp)) != nullptr) {
-				if (strncmp(dir->d_name, ".", 1) != 0) {
-					char noext[64];
-					char* p;
-					strcpy(noext, dir->d_name);
-					p = strchr(noext, '.');
-					*p = '\0';
-					if (strcmp(noext, fname) == 0) {
-						closedir(dirp);
-						return true;
-					}
+
+int contains(char const* pth, char* const fname) {
+	struct dirent* dir;
+	DIR* dirp;
+	if ((dirp = opendir(pth)) != NULL) {
+		while ((dir = readdir(dirp)) != NULL) {
+			if (strncmp(dir->d_name, ".", 1) != 0) {
+				char noext[64];
+				char* p;
+				strcpy(noext, dir->d_name);
+				p = strchr(noext, '.');
+				*p = '\0';
+				if (strcmp(noext, fname) == 0) {
+					closedir(dirp);
+					free(dirp);
+					return 1;
 				}
 			}
-			closedir(dirp);
 		}
-		return false;
 	}
-
-	bool contains(std::string &path, std::string &fname) {
-		return contains(path, (char* const) fname.c_str());
-	}
+	closedir(dirp);
+	free(dirp);
+	return 0;
 }

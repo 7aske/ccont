@@ -1,12 +1,15 @@
-CXX=g++
-out=ccont
+CC=gcc
+out=./build
 src=source/main.cpp
 flags=-g
 
-default_recipe=ccont
+default=ccont
 
 ccont: $(src)
-	$(CXX) -o $(out) $(src)
+	mkdir -p $(out) && $(CXX) -o $(out)/ccont $(src)
 
 install: ccont
 	sudo ln -sf $(shell pwd)/$(out) /usr/bin/$(out) 
+
+run: ccont
+	./build/ccont $(ARGS)
