@@ -1,18 +1,18 @@
 #define _GNU_SOURCE
 
-#include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sched.h>
-#include <sys/wait.h>
-#include <sys/mount.h>
 #include <sys/stat.h>
 #include <libgen.h>
 #include <dirent.h>
+#include <string.h>
+#include <stdlib.h>
+#include <zconf.h>
+#include <errno.h>
+#include <time.h>
+#include <stdio.h>
 
-#include "lib/shortid.h"
-#include "utils/utils.h"
-#include "jail/jail.h"
+#include "../headers/ccontutils.h"
+#include "../headers/shortid.h"
+#include "../headers/jail.h"
 
 #define _HELPFORMAT "%-25s\t%s\n"
 #define _ROOTFSFORMAT "%-25s\t%s\n"
@@ -36,8 +36,6 @@ int main(int argc, char* args[]) {
 	strcpy(bldfld, rootdir);
 	strcat(bldfld, "/cache/build");
 
-	setup_cont_image("ubuntu-node", rootdir);
-
 	if (argc == 1) {
 		print_help();
 		return 0;
@@ -52,13 +50,12 @@ int main(int argc, char* args[]) {
 			return 0;
 		}
 	}
-	// if (getuid() != 0) {
-	// 	panic("Please run as root", EACCES);
-	// }
+	if (getuid() != 0) {
+		panic("Please run as root", EACCES);
+	}
+	unsigned int flags = 0;
 	int image_selected = 0;
 	int prebuilt = 0;
-	int rm_cont = 0;
-	int build_cont = 0;
 	int cmd_start = 0;
 	char image_name[32];
 	memset(image_name, 0, 32);
@@ -74,9 +71,9 @@ int main(int argc, char* args[]) {
 			cmd_start = i;
 			break;
 		} else if (strcmp(args[i], "--rm") == 0) {
-			rm_cont = 1;
+			flags |= CONT_RM;
 		} else if (strcmp(args[i], "--build") == 0 || strcmp(args[i], "-b") == 0) {
-			build_cont = 1;
+			flags |= CONT_BUILD;
 		} else if (contains(bldfld, args[i])) {
 			image_selected = 1;
 			prebuilt = 1;
@@ -103,15 +100,14 @@ int main(int argc, char* args[]) {
 			strcat(buf, contid);
 			setup_cont_image(buf, rootdir);
 		}
-
 		if (cmd_start != 0) {
 			if (cmd_start == argc - 1) {
-				panic("Please specify commands with -c flag", EINVAL);
+				panic("Usage: ccont -c <args>...", EINVAL);
 			} else {
-				init2(image_name, contid, rootdir, &args[cmd_start + 1]);
+				init(image_name, contid, rootdir, &args[cmd_start + 1], flags);
 			}
 		} else {
-			init(image_name, contid, rootdir);
+			init(image_name, contid, rootdir, NULL, flags);
 		}
 	} else {
 		panic("Please specify a valid rootfs", EINVAL);
@@ -129,7 +125,7 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 		mkdir(cont_folder, 0755);
 	}
 
-	strcpy(cont_folder, build_name);
+	strcat(cont_folder, build_name);
 	if (!exists_stat(cont_folder)) {
 		mkdir(cont_folder, 0755);
 	}
@@ -154,8 +150,12 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 		panic("Cached file not found", ENOENT);
 	}
 
+	printf("%s\n", cache_fname);
+	printf("%s\n", cont_folder);
+
 	char buf[256];
 	memset(buf, 0, 256);
+	
 	sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
 	if (system(buf) != 0) {
 		panic("Cannot extract archive", EIO);
@@ -190,7 +190,7 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 		mkdir(cache_dir, 0755);
 	}
 
-	char* cont_folder = calloc(128, sizeof(char));
+	char* cont_folder = (char*) calloc(128, sizeof(char));
 	strcpy(cont_folder, rootdir);
 
 	strcat(cont_folder, "/containers/");

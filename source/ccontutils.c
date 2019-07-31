@@ -1,8 +1,8 @@
-#pragma once
-
 #include <string.h>
-#include <pthread.h>
-
+#include <stdio.h>
+#include <sys/stat.h>
+#include <stdlib.h>
+#include <dirent.h>
 
 int exists_stat(char const* pathname) {
 	struct stat fileStat;
@@ -19,7 +19,7 @@ int exists(char const* pathname) {
 	}
 }
 
-char* abspth(char* const cmd) {
+char* abspth(char* cmd) {
 	char* out = (char*) calloc(128, sizeof(char));
 	char buf[128];
 	struct stat statbuf;
@@ -65,14 +65,12 @@ int contains(char const* pth, char* const fname) {
 				p = strchr(noext, '.');
 				*p = '\0';
 				if (strcmp(noext, fname) == 0) {
-					closedir(dirp);
 					free(dirp);
 					return 1;
 				}
 			}
 		}
 	}
-	closedir(dirp);
 	free(dirp);
 	return 0;
 }

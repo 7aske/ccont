@@ -1,15 +1,20 @@
 CC=gcc
-out=./build
-src=source/main.cpp
+out=build
+src=source/ccontutils.c source/jail.c source/shortid.c source/main.c
+name=ccont
 flags=-g
+include=-I$(shell pwd)/headers
+libs=-lm
 
 default=ccont
 
+.PHONY: ccont
 ccont: $(src)
-	mkdir -p $(out) && $(CXX) -o $(out)/ccont $(src)
+	mkdir -p $(out) && $(CC) $(include) -o $(out)/$(name) $(src) $(libs) && ln -f $(shell pwd)/$(out)/$(name) $(name)
 
+.PHONY: install
 install: ccont
-	sudo ln -sf $(shell pwd)/$(out) /usr/bin/$(out) 
+	sudo ln -sf $(shell pwd)/$(out)/$(name) /usr/bin/$(name)
 
-run: ccont
-	./build/ccont $(ARGS)
+val: ccont
+	mkdir -p $(out) && $(CC) $(include) -o $(out)/$(name) $(src) $(libs) && ln -f $(shell pwd)/$(out)/$(name) $(name) && sudo valgrind --leak-check=full ./ccont ubuntu
