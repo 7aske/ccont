@@ -39,7 +39,7 @@ char* abspth(char* cmd) {
 	}
 
 	lstat(out, &statbuf);
-	if (S_ISLNK(statbuf.st_mode)){
+	if (S_ISLNK(statbuf.st_mode)) {
 		char* readlink = "readlink ";
 
 		strcpy(buf, readlink);
@@ -66,7 +66,9 @@ int contains(char const* pth, char* const fname) {
 				char* p;
 				strcpy(noext, dir->d_name);
 				p = strchr(noext, '.');
-				*p = '\0';
+				if (p != NULL) {
+					*p = '\0';
+				}
 				if (strcmp(noext, fname) == 0) {
 					free(dirp);
 					return 1;
