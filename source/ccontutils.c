@@ -27,12 +27,15 @@ char* abspth(char* cmd) {
 	strcpy(buf, "which ");
 	strcat(buf, cmd);
 
-	FILE* pid = popen(buf, "r");
+	FILE* fp = popen(buf, "r");
 	memset(buf, 0, 128);
 
-	if (pid) {
-		fread(out, sizeof(char), 128, pid);
+	if (fp) {
+		fread(out, sizeof(char), 128, fp);
 		*strrchr(out, '\n') = '\0';
+	} else {
+		free(out);
+		return NULL;
 	}
 
 	lstat(out, &statbuf);

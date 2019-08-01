@@ -19,7 +19,7 @@ void setup_src();
 
 void setup_root();
 
-void setup_variables();
+void setup_variables(void*);
 
 void setup_resolvconf();
 
@@ -29,7 +29,7 @@ void setup_dev();
 
 void cleanup();
 
-int start();
+int start(void*);
 
 int start_cmd();
 

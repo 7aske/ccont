@@ -2,11 +2,11 @@
 
 ## Description
 
-Linux container implementation using chroot and C++. Can be used to safely containerize an application in for testing or production purposes. Implemented based on what I think Docker uses behind the scenes for basic containerization.
+Linux container implementation using chroot and C. Can be used to safely containerize an application in for testing or production purposes. Implemented based on what I think Docker uses behind the scenes for basic containerization.
 
- Process which ```Ccont``` automates is downloading a specified Linux rootfs and and then extracts it to a, optionally non-persistent - see ```Usage```, folder where all the required mount points are established (proc, sys, dev etc...).
+ Process which `Ccont` automates is downloading a specified Linux rootfs and and then extracts it to a, optionally non-persistent container - see `Usage`, folder where all the required mount points are established (proc, sys, dev etc...).
 
-After setup user is dropped into a root `bash` shell running in the containerized environment. ```Ccont``` has the ability to upon successful setup immediately execute a command inside the container root shell which can be useful to for example run servers more easily. Command is passed to the `bash` shell with `-c` argument so it can be used to create more advanced startup procedures.
+After setup user is dropped into a root `bash` shell running in the containerized environment. `Ccont` has the ability to upon successful setup immediately execute a command inside the container root shell which can be useful to for example run servers more easily. Command is passed to the `bash` shell with `-c` argument so it can be used to create more advanced startup procedures.
 
 At shell logout all the mount points are released and sanitized.
 
@@ -21,6 +21,7 @@ At shell logout all the mount points are released and sanitized.
     Options:
     --rm                            removes container after exiting
     --build, -b                     builds an image of the container after exiting
+    --cont-id=<id>                  manually give an id name to a container
 
     ccont --list, -l                print a list of available file systems
     ccont --help, -h                print this message
@@ -33,15 +34,15 @@ Drops user into a containerized ubuntu rootfs container
 
 Same as the command above but removes the container mount folder after exiting the shell.
 
-`# ccont ubuntu -b`
+`# ccont -b --cont-id=nodejs ubuntu`
 
-Starts the container in build mode. Build mode compresses the image after exiting the shell. Which in turn allows it to be reused. Useful when you want to install dependencies for the program that you will run inside the container. User is asked for a name of the container. If blank random ID will be generated. Builds are saved to `./cache/builds`.
+Starts the container in build mode. Build mode compresses the image after exiting the shell. Which in turn allows it to be reused. Useful when you want to install dependencies for the program that you will run inside the container. User can specify a custom name for the container using `--cont-id=<name>` flag. If not used, random ID will be generated. Builds are saved to `./build/cache/builds`.
 
-`# ccont ubuntu-af3r1 -c node server.js`
+`# ccont ubuntu-nodejs -c node server.js`
 
-Starts the container `ubuntu-af3r1` and runs `node` with argument `server.js` which will be successful if the node was preinstalled in the `ubuntu-af3r1` container using `-b` option. Note that every usage of `-c` option mounts the current working directory which can lead to undefined behavior if the `ccont` directory is being mounted.
+Starts the container `ubuntu-nodejs` and runs `node` with argument `server.js` which will be successful if the node was preinstalled in the `ubuntu-nodejs` container using `-b` option. Note that every usage of `-c` option mounts the current working directory which can lead to undefined behavior if the `ccont` directory is being mounted.
 
-`# ccont ubuntu-af3r1 -c bash`
+`# ccont ubuntu-node -c bash`
 
 This is workaround to mount the current working directory without executing any specific command. Result will be a double shell but the current working directory will be successfully mounted to `/src` of the container.
 
@@ -49,17 +50,17 @@ This is workaround to mount the current working directory without executing any 
 
 ```$ make```
 
-Compiles `Ccont` using the available `g++` compiler.
+Compiles `Ccont` using the available `gcc` compiler.
 
 ```# make install```
 
-Creates a symlink to the `ccont` executable in the current directory.
+Creates a symlink to the `ccont` executable in `build` folder.
 
 ## Requirements
 
 Must be run as root on a Unix based machine.
 
-Compilation uses GNU `g++`.
+Compilation uses GNU `gcc`.
 
 Container setup process uses `wget` and `tar`.
 

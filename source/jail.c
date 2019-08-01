@@ -20,7 +20,6 @@ typedef struct container {
 	char cont_root[128];
 	char cont_name[32];
 	char cont_id[16];
-	char* argv0;
 	char** cmd_args;
 	size_t* cont_stack;
 	long cont_stack_size;
@@ -46,7 +45,7 @@ void setup_src() {
 	system(buf);
 	memset(buf, 0, BUFSIZE);
 	sprintf(buf, "%s/src", cont->cont_root);
-	if (mount("./", cont->cont_root, "tmpfs", MS_BIND, NULL) < 0) {
+	if (mount("./", buf, "tmpfs", MS_BIND, NULL) < 0) {
 		errno = EIO;
 		perror("Unable to mount /src");
 	}
@@ -58,21 +57,24 @@ void setup_root() {
 		errno = EIO;
 		perror("Error creating chroot");
 	}
+
 	chdir("/");
 	if (mount("proc", "/proc", "proc", 0, NULL) < 0) {
 		errno = EIO;
 		perror("Unable to mount /proc");
 	}
-
 }
 
 
-void setup_variables() {
+void setup_variables(void* c) {
 	char buf[BUFSIZE];
 	memset(buf, 0, BUFSIZE);
+
 	clearenv();
-	sprintf(buf, "hostname %s", cont->cont_name);
+
+	sprintf(buf, "hostname %s", ((container_t*) c)->cont_name);
 	system(buf);
+
 	setenv("HOME", "/", 0);
 	setenv("DISPLAY", ":0.0", 0);
 	setenv("TERM", "xterm-256color", 0);
@@ -140,19 +142,14 @@ void cleanup() {
 	memset(buf, 0, BUFSIZE);
 
 	// unmount /src
-	// printf("INFO umounting /src\n");
-	// sprintf(buf, "umount -f %s/src", cont->cont_root);
-	// if (system(buf) < 0) {
-	// 	printf("ERROR umounting /src\n");
-	// }
-	// memset(buf, 0, BUFSIZE);
-
-	// free allocated container stack
-	// if (cont->cont_stack != NULL) {
-	// 	free(cont->cont_stack - cont->cont_stack_size);
-	// }
-
-
+	if ((FLAGS & CONT_CMD) == CONT_CMD) {
+		printf("INFO umounting /src\n");
+		sprintf(buf, "umount -f %s/src", cont->cont_root);
+		if (system(buf) < 0) {
+			printf("ERROR umounting /src\n");
+		}
+		memset(buf, 0, BUFSIZE);
+	}
 
 	if ((FLAGS & CONT_BUILD) == CONT_BUILD) {
 		printf("INFO building container image\n");
@@ -185,9 +182,10 @@ void cleanup() {
 
 }
 
-int start() {
+int start(void* arg) {
+	void* container = arg;
 	setup_root();
-	setup_variables();
+	setup_variables(container);
 	setup_dev();
 
 	printf("INFO container PID: %d", getpid());
@@ -208,11 +206,14 @@ int start() {
 			cont->cmd_args++;
 		}
 		fclose(startup);
-		// setup_src();
-		// chdir("/src");
-
-		char* args[] = {"--init-file", "/.startup", NULL};
-		if (execvp("/bin/bash", args) != 0) {
+		chdir("/src");
+		//
+		// char* args[] = {"--init-file", "/.startup", NULL};
+		// if (execvp("/bin/bash", args) != 0) {
+		// 	perror("Error initializing shell");
+		// 	return EXIT_FAILURE;
+		// }
+		if (system("/bin/bash --init-file /.startup") <= 0) {
 			perror("Error initializing shell");
 			return EXIT_FAILURE;
 		}
@@ -230,27 +231,10 @@ int start() {
 
 void init(char const* cname, char const* cid, char const* croot, char** args, unsigned int flags) {
 	cont = (container_t*) calloc(1, sizeof(struct container));
-	FLAGS = flags;
-	FLAGS |= CONT_RM;
-
-	if ((FLAGS & CONT_BUILD) == CONT_BUILD) {
-		FLAGS ^= CONT_RM;
-	}
-
-	if (args != NULL) {
-		FLAGS |= CONT_CMD;
-		cont->cmd_args = args;
-	}
-
 	if (cont == NULL) {
 		errno = ENOMEM;
 		perror("Cannot allocate memory for container");
 	}
-	cont->cont_stack_size = 65536;
-
-	int clone_flags;
-	int cpid;
-
 	strcpy(cont->cont_id, cid);
 	strcpy(cont->root, croot);
 
@@ -262,15 +246,27 @@ void init(char const* cname, char const* cid, char const* croot, char** args, un
 	strcat(cont->cont_root, "/containers/");
 	strcat(cont->cont_root, cont->cont_name);
 
+	cont->cont_stack_size = 65536;
 	// stack for container
 	cont->cont_stack = stalloc(cont->cont_stack_size);
+
+	FLAGS = flags;
+
+	if (args != NULL) {
+		FLAGS |= CONT_CMD;
+		cont->cmd_args = args;
+		setup_src();
+	}
+
+	int clone_flags;
+	int cpid;
 
 	setup_bashrc();
 
 	int status;
 	// flags to clone process tree and unix time sharing
 	clone_flags = CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD;
-	if ((cpid = clone(start, cont->cont_stack, clone_flags, NULL)) <= 0) {
+	if ((cpid = clone(start, cont->cont_stack, clone_flags, (void*) cont)) <= 0) {
 		perror("Error cloning process");
 	} else {
 		printf("INFO container PID: %d\n", cpid);

@@ -10,9 +10,11 @@ default=ccont
 
 .PHONY: ccont
 ccont: $(src)
-	mkdir -p $(out) && $(CC) $(include) -o $(out)/$(name) $(src) $(libs) && ln -f $(shell pwd)/$(out)/$(name) $(name)
+	mkdir -p $(out) && $(CC) $(include) -o $(out)/$(name) $(src) $(libs)
+	cp -r ./config $(out)/
+	mkdir -p $(out)/cache/build
+	mkdir -p $(out)/containers
 
-.PHONY: install
 install: ccont
 	sudo ln -sf $(shell pwd)/$(out)/$(name) /usr/bin/$(name)
 

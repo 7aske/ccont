@@ -27,8 +27,6 @@ void print_rootfs(char const*);
 
 void print_help();
 
-void panic(char const*, int);
-
 int main(int argc, char* args[]) {
 	// heap
 	char* rootdir = dirname(abspth(args[0]));
@@ -58,6 +56,8 @@ int main(int argc, char* args[]) {
 	int prebuilt = 0;
 	int cmd_start = 0;
 	char image_name[32];
+	char udef_id[32];
+	memset(udef_id, 0, 32);
 	memset(image_name, 0, 32);
 
 	for (int i = 0; i < argc; i++) {
@@ -78,8 +78,19 @@ int main(int argc, char* args[]) {
 			image_selected = 1;
 			prebuilt = 1;
 			strcpy(image_name, args[i]);
+		} else if (strncmp(args[i], "--cont-id=", 10) == 0) {
+			char* eq = strrchr(args[i], '=');
+			if (strlen(args[i]) > 10) {
+				if (strlen(args[i]) < 13) {
+					panic("Container ID too short", EINVAL);
+				}
+				strncpy(udef_id, eq + 1, 32);
+			} else {
+				panic("Invalid container ID", EINVAL);
+			}
 		}
 	}
+
 	if (image_selected) {
 		printf("%s\n", image_name);
 		char* contid;
@@ -91,10 +102,13 @@ int main(int argc, char* args[]) {
 			strcpy(contid, p + 1);
 		} else {
 			srand(time(NULL));
-			// TODO: input
-			contid = encode(random(), 42);
 			char buf[64];
 			memset(buf, 0, 64);
+			if (udef_id[0] == '\0') {
+				contid = encode(random(), 42);
+			} else {
+				contid = udef_id;
+			}
 			strcpy(buf, image_name);
 			strcat(buf, "-");
 			strcat(buf, contid);
@@ -126,9 +140,6 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 	}
 
 	strcat(cont_folder, build_name);
-	if (!exists_stat(cont_folder)) {
-		mkdir(cont_folder, 0755);
-	}
 
 	char* cache_fname = (char*) calloc(128, sizeof(char));
 	strcpy(cache_fname, rootdir);
@@ -150,17 +161,17 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 		panic("Cached file not found", ENOENT);
 	}
 
-	printf("%s\n", cache_fname);
-	printf("%s\n", cont_folder);
-
 	char buf[256];
 	memset(buf, 0, 256);
-	
-	sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
-	if (system(buf) != 0) {
-		panic("Cannot extract archive", EIO);
-	} else {
-		printf("INFO extracted %s\n", build_name);
+
+	if (!exists_stat(cont_folder)) {
+		mkdir(cont_folder, 0755);
+		sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
+		if (system(buf) != 0) {
+			panic("Cannot extract archive", EIO);
+		} else {
+			printf("INFO extracted %s\n", build_name);
+		}
 	}
 }
 
@@ -199,9 +210,7 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 	}
 
 	strcat(cont_folder, build_name);
-	if (!exists_stat(cont_folder)) {
-		mkdir(cont_folder, 0755);
-	}
+
 
 	char* cache_fname = (char*) calloc(128, sizeof(char));
 	strcpy(cache_fname, cache_dir);
@@ -215,11 +224,15 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 		memset(buf, 0, 256);
 	}
 
-	sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
-	if (system(buf) != 0) {
-		panic("Cannot extract archive", EIO);
-	} else {
-		printf("INFO extracted %s\n", build_name);
+	if (!exists_stat(cont_folder)) {
+		mkdir(cont_folder, 0755);
+		sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
+		if (system(buf) != 0) {
+			panic("Cannot extract archive", EIO);
+		} else {
+			printf("INFO extracted %s\n", build_name);
+		}
+
 	}
 
 	free(cont_folder);
@@ -227,7 +240,7 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 }
 
 void print_help() {
-	printf("Ccont 0.0.1 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
+	printf("Ccont 0.0.2 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
 	printf("Usage:\n");
 	printf(_HELPFORMAT, "ccont <rootfs> [opts]", "start a <rootfs> container");
 	printf(_HELPFORMAT, "ccont <rootfs> -c <cmd> [args]", "start a <rootfs> container and execute");
@@ -235,6 +248,7 @@ void print_help() {
 	printf(_HELPFORMAT, "Options:", "");
 	printf(_HELPFORMAT, "--rm", "removes container after exiting");
 	printf(_HELPFORMAT, "--build, -b", "builds an image of the container after exiting");
+	printf(_HELPFORMAT, "--cont-id=<id>", "manually give an id name to a container");
 	printf(_HELPFORMAT, "", "");
 	printf(_HELPFORMAT, "ccont --list, -l", "print a list of available file systems");
 	printf(_HELPFORMAT, "ccont --help, -h", "print this message");
