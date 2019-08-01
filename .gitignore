@@ -1,8 +1,9 @@
 .idea
+.vscode
 cmake-build-debug/
-rootfs/
 ccont
 *.tar.xz
 *.tar.gz
 containers/
 tmp/
+build/

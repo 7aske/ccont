@@ -1,3 +1,6 @@
+# used only for Clion functionality
+# preferable to compile using Makefile
+
 cmake_minimum_required(VERSION 3.13)
 project(ccont)
 
