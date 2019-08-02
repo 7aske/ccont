@@ -205,7 +205,7 @@ int start(void* arg) {
 	// setup nameservers for internet access
 	setup_resolvconf();
 
-	if (strncmp(cont->cont_name, "alpine", 6) == 0) {
+	if (strncmp(cont->cont_distro, "alpine", 6) == 0) {
 		system("apk add bash &> /dev/null");
 	}
 
@@ -238,7 +238,7 @@ int start(void* arg) {
 }
 
 
-void init(char const* cname, char const* cid, char const* croot, char** cargs, struct cenv* cenvp, unsigned int flags) {
+void init(char const* cdistro, char const* cname, char const* croot, char** cargs, struct cenv* cenvp, unsigned int flags) {
 	cont = (container_t*) calloc(1, sizeof(container_t));
 	if (cont == NULL) {
 		errno = ENOMEM;
@@ -247,12 +247,10 @@ void init(char const* cname, char const* cid, char const* croot, char** cargs, s
 
 	cont->cont_envp = cenvp;
 
-	strcpy(cont->cont_id, cid);
+	strcpy(cont->cont_distro, cdistro);
 	strcpy(cont->root, croot);
 
 	strcpy(cont->cont_name, cname);
-	strcat(cont->cont_name, "-");
-	strcat(cont->cont_name, cid);
 
 	strcpy(cont->cont_root, croot);
 	strcat(cont->cont_root, "/containers/");

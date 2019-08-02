@@ -33,15 +33,15 @@ At shell logout all the mount points are released and sanitized.
                                     'sudo' '-E' flag is mandatory
                                     eg. 'CONT_PATH=$PATH sudo -E ccont ...'
 
-`# ccont ubuntu`
+`# ccont --rm`
 
-Drops user into a containerized ubuntu container after downloading the filesystem
+Drops user into a containerized ubuntu container after downloading the filesystem which is removed after use.
 
-`# ccont ubuntu --rm`
+`# ccont --distro=alpine`
 
-Same as the command above but removes the container mount folder after exiting the shell.
+Same as command above but `alpine-linux` image is chose and the image is not removed after use.
 
-`# ccont -b --cont-id=nodejs ubuntu`
+`# ccont -b --cont-id=ubuntu-nodejs `
 
 Starts the container in build mode. Build mode compresses the image after exiting the shell. Which in turn allows it to be reused. Useful when you want to install dependencies for the program that you will run inside the container. User can specify a custom name for the container using `--cont-id=<name>` flag. If not used, random ID will be generated. Builds are saved to `./build/cache/builds`.
 

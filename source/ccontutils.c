@@ -57,6 +57,18 @@ char* abspth(char* cmd) {
 	return out;
 }
 
+int indexof(char** arr, char* str) {
+	int count = 0;
+	while(*arr != NULL){
+		printf("%s %s\n", *arr, str);
+		if (strcmp(*arr, str) == 0){
+			return count;
+		}
+		count++;
+		arr++;
+	}
+	return -1;
+}
 
 int contains(char const* pth, char* const fname) {
 	struct dirent* dir;

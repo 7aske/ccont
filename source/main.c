@@ -21,7 +21,7 @@ void panic(const char*, int);
 
 void setup_load_cenv(char**, cenv_t**);
 
-void setup_cont_image(char const*, char const*);
+void setup_cont_image(char const*, char const*, char const*);
 
 void setup_cont_image_prebuilt(char const*, char const*);
 
@@ -37,6 +37,8 @@ void print_help();
 
 void setup_ftree(char*);
 
+char* rootfs[] = {"ubuntu", "alpine", NULL};
+
 int main(int argc, char* args[], char** envp) {
 	char* rootdir = dirname(abspth(args[0]));
 	cenv_t* cenvs = NULL;
@@ -50,17 +52,10 @@ int main(int argc, char* args[], char** envp) {
 	strcat(cntfld, "/containers");
 
 	setup_ftree(rootdir);
-
-	if (argc == 1) {
-		print_help();
-		free(rootdir);
-		return 0;
-	}
-
+	
 	for (int i = 0; i < argc; i++) {
 		if (strcmp(args[i], "--help") == 0 || strcmp(args[i], "-h") == 0) {
 			print_help();
-			free(rootdir);
 			return 0;
 		} else if (strcmp(args[i], "--list") == 0 || strcmp(args[i], "-l") == 0) {
 			print_rootfs_header();
@@ -68,33 +63,37 @@ int main(int argc, char* args[], char** envp) {
 			print_rootfs(bldfld);
 			printf("Deployed containers:\n");
 			print_rootfs(cntfld);
-			free(rootdir);
 			return 0;
 		}
 	}
 	if (getuid() != 0) {
-		free(rootdir);
 		panic("Please run as root", EACCES);
+		return 1;
 	}
 
 	setup_load_cenv(envp, &cenvs);
 
 	unsigned int flags = 0;
-	int image_selected = 0;
+	int image_selected = -1;
 	int prebuilt = 0;
 	int cmd_start = 0;
-	char image_name[32];
-	char udef_id[32];
-	memset(udef_id, 0, 32);
-	memset(image_name, 0, 32);
+	char distro_name[32];
+	char userdef_name[32];
+
+	memset(userdef_name, 0, 32);
+	memset(distro_name, 0, 32);
 
 	for (int i = 0; i < argc; i++) {
-		if (strcmp(args[i], "alpine") == 0) {
-			image_selected = 1;
-			strncpy(image_name, "alpine", 6);
-		} else if (strcmp(args[i], "ubuntu") == 0) {
-			image_selected = 1;
-			strncpy(image_name, "ubuntu", 6);
+		if (strncmp(args[i], "--distro=", 9) == 0) {
+			if (strlen(args[i]) > 10) {
+				char* eq = strrchr(args[i], '=');
+				*eq++ = '\0';
+				strncpy(distro_name, eq, 32);
+				image_selected = indexof(rootfs, distro_name);
+			} else {
+				panic("Invalid distro name", EINVAL);
+				return 1;
+			}
 		} else if (strcmp(args[i], "-c") == 0) {
 			cmd_start = i;
 			break;
@@ -105,113 +104,52 @@ int main(int argc, char* args[], char** envp) {
 		} else if (contains(bldfld, args[i]) || contains(cntfld, args[i])) {
 			image_selected = 1;
 			prebuilt = 1;
-			strcpy(image_name, args[i]);
+			strcpy(userdef_name, args[i]);
 		} else if (strncmp(args[i], "--cont-id=", 10) == 0) {
-			char* eq = strrchr(args[i], '=');
 			if (strlen(args[i]) > 10) {
 				if (strlen(args[i]) < 13) {
-					free(rootdir);
-					while (cenvs != NULL) {
-						cenv_t* freep = cenvs;
-						cenvs = cenvs->next;
-						free(freep->key);
-						free(freep->val);
-						free(freep);
-					}
 					panic("Container ID too short", EINVAL);
+					return 1;
 				}
-				strncpy(udef_id, eq + 1, 32);
+				char* eq = strrchr(args[i], '=');
+				if (contains(bldfld, eq + 1) || contains(cntfld, eq + 1)) {
+					panic("Container already exists", EINVAL);
+				}
+				strncpy(userdef_name, eq + 1, 32);
 			} else {
-				free(rootdir);
-				while (cenvs != NULL) {
-					cenv_t* freep = cenvs;
-					cenvs = cenvs->next;
-					free(freep->key);
-					free(freep->val);
-					free(freep);
-				}
 				panic("Invalid container ID", EINVAL);
 				return 1;
 			}
 		}
 	}
 	char* contid = NULL;
-	if (image_selected) {
-		printf("INFO cont-name: %s\n", image_name);
-		if (prebuilt) {
-			setup_cont_image_prebuilt(image_name, rootdir);
-			char* p = strrchr(image_name, '-');
-			if (p == NULL) {
-				free(rootdir);
-				while (cenvs != NULL) {
-					cenv_t* freep = cenvs;
-					cenvs = cenvs->next;
-					free(freep->key);
-					free(freep->val);
-					free(freep);
-				}
-				panic("Please specify a valid rootfs", EINVAL);
-				return 1;
-			}
-			*p = '\0';
-			contid = (char*) calloc(strlen(++p), sizeof(char));
-			strcpy(contid, p);
-		} else {
+	if (image_selected == -1) {
+		strcpy(distro_name, "ubuntu");
+	}
+	if (prebuilt) {
+		setup_cont_image_prebuilt(userdef_name, rootdir);
+		contid = userdef_name;
+	} else {
+		if (userdef_name[0] == '\0') {
 			srand(time(NULL));
-			char buf[64];
-			memset(buf, 0, 64);
-			if (udef_id[0] == '\0') {
-				contid = encode(random(), 42);
-			} else {
-				contid = (char*) calloc(strlen(udef_id), sizeof(char));
-				strcpy(contid, udef_id);
-			}
-			strcpy(buf, image_name);
-			strcat(buf, "-");
-			strcat(buf, contid);
-			setup_cont_image(buf, rootdir);
-		}
-		if (cmd_start != 0) {
-			if (cmd_start == argc - 1) {
-				free(rootdir);
-				free(contid);
-				while (cenvs != NULL) {
-					cenv_t* freep = cenvs;
-					cenvs = cenvs->next;
-					free(freep->key);
-					free(freep->val);
-					free(freep);
-				}
-				panic("Usage: ccont -c <args>...", EINVAL);
-				return 1;
-			} else {
-				init(image_name, contid, rootdir, &args[cmd_start + 1], cenvs, flags);
-				free(contid);
-			}
+			contid = encode(random(), 42);
 		} else {
-			init(image_name, contid, rootdir, NULL, cenvs, flags);
-			free(contid);
+			contid = (char*) calloc(strlen(userdef_name), sizeof(char));
+			strcpy(contid, userdef_name);
+		}
+		setup_cont_image(distro_name, contid, rootdir);
+	}
+	if (cmd_start != 0) {
+		if (cmd_start == argc - 1) {
+			panic("Usage: ccont -c <args>...", EINVAL);
+			return 1;
+		} else {
+			init(distro_name, contid, rootdir, &args[cmd_start + 1], cenvs, flags);
 		}
 	} else {
-		while (cenvs != NULL) {
-			cenv_t* freep = cenvs;
-			cenvs = cenvs->next;
-			free(freep->key);
-			free(freep->val);
-			free(freep);
-		}
-		free(rootdir);
-		panic("Please specify a valid rootfs", EINVAL);
-		return 1;
+		init(distro_name, contid, rootdir, NULL, cenvs, flags);
 	}
-	free(rootdir);
-	while (cenvs != NULL) {
-		cenv_t* freep = cenvs;
-		cenvs = cenvs->next;
-		free(freep->key);
-		free(freep->val);
-		free(freep);
-	}
+
 	return 0;
 }
 
@@ -263,11 +201,9 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 			system(buf);
 		}
 	}
-	free(cont_folder);
-
 }
 
-void setup_cont_image(char const* build_name, char const* rootdir) {
+void setup_cont_image(char const* distro_name, char const* build_name, char const* rootdir) {
 	char ubuntu[] = "http://cdimage.ubuntu.com/ubuntu-base/releases/18.10/release/ubuntu-base-18.10-base-amd64.tar.gz";
 	char alpine[] = "http://dl-cdn.alpinelinux.org/alpine/v3.9/releases/x86_64/alpine-minirootfs-3.9.3-x86_64.tar.gz";
 	char* sel_rootfs = NULL;
@@ -275,9 +211,9 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 	char buf[256];
 	memset(buf, 0, 256);
 
-	if (strncmp(build_name, "ubuntu", 6) == 0) {
+	if (strncmp(distro_name, "ubuntu", 6) == 0) {
 		sel_rootfs = ubuntu;
-	} else if (strncmp(build_name, "alpine", 6) == 0) {
+	} else if (strncmp(distro_name, "alpine", 6) == 0) {
 		sel_rootfs = alpine;
 	} else {
 		panic("Invalid container name", EINVAL);
@@ -345,13 +281,14 @@ void print_version_header() {
 void print_help() {
 	print_version_header();
 	printf("Usage:\n");
-	printf(_HELPFORMAT, "ccont <rootfs> [opts]", "start a <rootfs> container");
-	printf(_HELPFORMAT, "ccont <rootfs> -c <cmd> [args]", "start a <rootfs> container and execute");
+	printf(_HELPFORMAT, "ccont <cont-id> [opts]", "start a <rootfs> container");
+	printf(_HELPFORMAT, "ccont <cont-id> -c <cmd> [args]", "start a <rootfs> container and execute");
 	printf(_HELPFORMAT, "", "command <cmd> with arguments [args]");
 	printf(_HELPFORMAT, "Options:", "");
 	printf(_HELPFORMAT, "--rm", "removes container after exiting");
 	printf(_HELPFORMAT, "--build, -b", "builds an image of the container after exiting");
 	printf(_HELPFORMAT, "--cont-id=<id>", "manually give an id name to a container");
+	printf(_HELPFORMAT, "--distro=<distro>", "manually select a distro (default = ubuntu)");
 	printf(_HELPFORMAT, "", "");
 	printf(_HELPFORMAT, "ccont --list, -l", "print a list of available file systems");
 	printf(_HELPFORMAT, "ccont --help, -h", "print this message");
@@ -423,7 +360,6 @@ void setup_ftree(char* root) {
 
 void print_cenv(cenv_t* cenv) {
 	cenv_t* curr = cenv;
-	printf("0x%x\n", curr);
 	while (curr != NULL) {
 		printf("Key: %s Value: %s\n", curr->key, curr->val);
 		curr = curr->next;
@@ -460,7 +396,6 @@ void setup_load_cenv(char** envp, cenv_t** cenv) {
 					(*currb)->next = newcenv;
 				}
 			}
-
 		}
 	}
 }

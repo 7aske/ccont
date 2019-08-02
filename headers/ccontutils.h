@@ -4,4 +4,6 @@ int exists(char const* pathname);
 
 char* abspth(char* cmd);
 
-int contains(char const* pth, char* const fname);
+int contains(char const* pth, char const* fname);
+
+int indexof(char** arr, char* str);

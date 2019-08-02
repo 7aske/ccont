@@ -17,7 +17,7 @@ typedef struct container {
 	char root[128];
 	char cont_root[128];
 	char cont_name[32];
-	char cont_id[16];
+	char cont_distro[32];
 	char** cmd_args;
 	cenv_t* cont_envp;
 	size_t* cont_stack;
