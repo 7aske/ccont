@@ -27,16 +27,17 @@ char* abspth(char* cmd) {
 	strcpy(buf, "which ");
 	strcat(buf, cmd);
 
-	FILE* fp = popen(buf, "r");
+	FILE* fp1 = popen(buf, "r");
 	memset(buf, 0, 128);
 
-	if (fp) {
-		fread(out, sizeof(char), 128, fp);
+	if (fp1) {
+		fread(out, sizeof(char), 128, fp1);
 		*strrchr(out, '\n') = '\0';
 	} else {
 		free(out);
 		return NULL;
 	}
+	fclose(fp1);
 
 	lstat(out, &statbuf);
 	if (S_ISLNK(statbuf.st_mode)) {
@@ -46,11 +47,12 @@ char* abspth(char* cmd) {
 		strcat(buf, out);
 		memset(out, 0, 128);
 
-		FILE* pid2 = popen(buf, "r");
-		if (pid2) {
-			fread(out, sizeof(char), 128, pid2);
+		FILE* fp2 = popen(buf, "r");
+		if (fp2) {
+			fread(out, sizeof(char), 128, fp2);
 			*strrchr(out, '\n') = '\0';
 		}
+		fclose(fp2);
 	}
 	return out;
 }

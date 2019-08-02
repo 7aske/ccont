@@ -5,6 +5,7 @@ name=ccont
 flags=-g
 include=-I$(shell pwd)/headers
 libs=-lm
+valflags=--track-origins=yes --read-var-info=yes --show-leak-kinds=all --leak-check=full
 
 default=ccont
 
@@ -19,4 +20,4 @@ install: ccont
 	sudo ln -sf $(shell pwd)/$(out)/$(name) /usr/bin/$(name)
 
 val: ccont
-	sudo valgrind --show-leak-kinds=all --leak-check=full $(out)/ccont ubuntu-test
+	sudo valgrind $(valflags) $(out)/$(name) ubuntu-test

@@ -15,7 +15,6 @@
 
 #define BUFSIZE 256
 
-static size_t* cont_stack_fptr = NULL;
 
 typedef struct container {
 	char root[128];
@@ -27,7 +26,9 @@ typedef struct container {
 	long cont_stack_size;
 } container_t;
 
+static size_t* cont_stack_fptr = NULL;
 static container_t* cont = NULL;
+
 static unsigned int FLAGS;
 
 void* stalloc(long size) {
@@ -178,13 +179,15 @@ void cleanup() {
 		printf("INFO removing root dir\n");
 		sprintf(buf, "rm -rf %s", cont->cont_root);
 		system(buf);
-	} else {
-		unsigned int flags = S_IRWXU | S_IRWXG | S_IROTH;
-		chmod(cont->cont_root, flags);
+		memset(buf, 0, BUFSIZE);
 	}
 
 	if (cont_stack_fptr != NULL) {
 		free(cont_stack_fptr);
+	}
+
+	if (cont != NULL) {
+		free(cont);
 	}
 
 }

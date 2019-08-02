@@ -23,6 +23,8 @@ void setup_cont_image(char const*, char const*);
 
 void setup_cont_image_prebuilt(char const*, char const*);
 
+void print_version_header();
+
 void print_rootfs_header();
 
 void print_rootfs(char const*);
@@ -32,9 +34,6 @@ void print_help();
 void setup_ftree(char*);
 
 int main(int argc, char* args[]) {
-	printf("%d\n", argc);
-	printf("%s\n", args[0]);
-
 	char* rootdir = dirname(abspth(args[0]));
 	char bldfld[192];
 	char cntfld[192];
@@ -60,7 +59,9 @@ int main(int argc, char* args[]) {
 			return 0;
 		} else if (strcmp(args[i], "--list") == 0 || strcmp(args[i], "-l") == 0) {
 			print_rootfs_header();
+			printf("Saved containers:\n");
 			print_rootfs(bldfld);
+			printf("Deployed containers:\n");
 			print_rootfs(cntfld);
 			free(rootdir);
 			return 0;
@@ -108,19 +109,24 @@ int main(int argc, char* args[]) {
 			} else {
 				free(rootdir);
 				panic("Invalid container ID", EINVAL);
+				return 1;
 			}
 		}
 	}
-
+	char* contid = NULL;
 	if (image_selected) {
 		printf("%s\n", image_name);
-		char* contid;
 		if (prebuilt) {
 			setup_cont_image_prebuilt(image_name, rootdir);
 			char* p = strrchr(image_name, '-');
+			if (p == NULL){
+				free(rootdir);
+				panic("Please specify a valid rootfs", EINVAL);
+				return 1;
+			}
 			*p = '\0';
-			contid = (char*) calloc(strlen(p + 1), sizeof(char));
-			strcpy(contid, p + 1);
+			contid = (char*) calloc(strlen(++p), sizeof(char));
+			strcpy(contid, p);
 		} else {
 			srand(time(NULL));
 			char buf[64];
@@ -128,7 +134,8 @@ int main(int argc, char* args[]) {
 			if (udef_id[0] == '\0') {
 				contid = encode(random(), 42);
 			} else {
-				contid = udef_id;
+				contid = (char*) calloc(strlen(udef_id), sizeof(char));
+				strcpy(contid, udef_id);
 			}
 			strcpy(buf, image_name);
 			strcat(buf, "-");
@@ -138,16 +145,20 @@ int main(int argc, char* args[]) {
 		if (cmd_start != 0) {
 			if (cmd_start == argc - 1) {
 				free(rootdir);
+				free(contid);
 				panic("Usage: ccont -c <args>...", EINVAL);
+				return 1;
 			} else {
 				init(image_name, contid, rootdir, &args[cmd_start + 1], flags);
+				free(contid);
 			}
 		} else {
 			init(image_name, contid, rootdir, NULL, flags);
+			free(contid);
 		}
 	} else {
-		panic("Please specify a valid rootfs", EINVAL);
 		free(rootdir);
+		panic("Please specify a valid rootfs", EINVAL);
 		return 1;
 	}
 	free(rootdir);
@@ -197,6 +208,9 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 			panic("Cannot extract archive", EIO);
 		} else {
 			printf("INFO extracted %s\n", build_name);
+			memset(buf, 0, 256);
+			sprintf(buf, "chmod 775 %s", cont_folder);
+			system(buf);
 		}
 	}
 	free(cont_folder);
@@ -248,12 +262,19 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 	if (!exists_stat(cache_fname)) {
 		sprintf(buf, "wget -O %s %s -q --show-progress", cache_fname, sel_rootfs);
 		system(buf);
+
+		char* cbuf = (char *) calloc(128, sizeof(char));
+		strcpy(cbuf, cache_fname);
+		strcat(cbuf, ".tar.gz");
+		chmod(cbuf, 0775);
+		free(cbuf);
 		memset(buf, 0, 256);
 	}
 
 	if (!exists_stat(cont_folder)) {
 		mkdir(cont_folder, 0755);
 		sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
+
 		if (system(buf) != 0) {
 			panic("Cannot extract archive", EIO);
 		} else {
@@ -266,8 +287,12 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 	free(cache_dir);
 }
 
+void print_version_header(){
+	printf("Ccont 0.0.3 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
+}
+
 void print_help() {
-	printf("Ccont 0.0.2 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
+	print_version_header();
 	printf("Usage:\n");
 	printf(_HELPFORMAT, "ccont <rootfs> [opts]", "start a <rootfs> container");
 	printf(_HELPFORMAT, "ccont <rootfs> -c <cmd> [args]", "start a <rootfs> container and execute");
@@ -282,7 +307,7 @@ void print_help() {
 }
 
 void print_rootfs_header() {
-	printf("Ccont 0.0.2 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
+	print_version_header();
 	printf("Available root file systems:\n");
 	printf(_HELPFORMAT, "ubuntu", "Ubuntu 18.10");
 	printf(_HELPFORMAT, "alpine", "Alpine 3.9.3");
@@ -322,7 +347,7 @@ void setup_ftree(char* root) {
 	memset(buf, 0, 256);
 
 	strcpy(buf, root);
-	strcat(buf, "/container");
+	strcat(buf, "/containers");
 
 	mkdir(buf, 0755);
 	memset(buf, 0, 256);
