@@ -19,4 +19,4 @@ install: ccont
 	sudo ln -sf $(shell pwd)/$(out)/$(name) /usr/bin/$(name)
 
 val: ccont
-	mkdir -p $(out) && $(CC) $(include) -o $(out)/$(name) $(src) $(libs) && ln -f $(shell pwd)/$(out)/$(name) $(name) && sudo valgrind --leak-check=full ./ccont ubuntu
+	sudo valgrind --show-leak-kinds=all --leak-check=full $(out)/ccont ubuntu-test
