@@ -15,6 +15,8 @@
 
 #define BUFSIZE 256
 
+static size_t* cont_stack_fptr = NULL;
+
 typedef struct container {
 	char root[128];
 	char cont_root[128];
@@ -34,6 +36,7 @@ void* stalloc(long size) {
 		errno = ENOMEM;
 		perror("Cannot allocate stack memory");
 	}
+	cont_stack_fptr = stack;
 	// stack grows downwards so move ptr to the end
 	return stack + size;
 }
@@ -178,6 +181,10 @@ void cleanup() {
 	} else {
 		unsigned int flags = S_IRWXU | S_IRWXG | S_IROTH;
 		chmod(cont->cont_root, flags);
+	}
+
+	if (cont_stack_fptr != NULL) {
+		free(cont_stack_fptr);
 	}
 
 }
