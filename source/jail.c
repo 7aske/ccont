@@ -15,17 +15,6 @@
 
 #define BUFSIZE 256
 
-
-typedef struct container {
-	char root[128];
-	char cont_root[128];
-	char cont_name[32];
-	char cont_id[16];
-	char** cmd_args;
-	size_t* cont_stack;
-	long cont_stack_size;
-} container_t;
-
 static size_t* cont_stack_fptr = NULL;
 static container_t* cont = NULL;
 
@@ -78,6 +67,13 @@ void setup_variables(void* c) {
 
 	sprintf(buf, "hostname %s", ((container_t*) c)->cont_name);
 	system(buf);
+
+	cenv_t* curr = ((container_t*) c)->cont_envp;
+	while (curr != NULL) {
+		printf("INFO env %s=%s\n", curr->key, curr->val);
+		setenv(curr->key, curr->val, 0);
+		curr = curr->next;
+	}
 
 	setenv("HOME", "/", 0);
 	setenv("DISPLAY", ":0.0", 0);
@@ -198,7 +194,13 @@ int start(void* arg) {
 	setup_variables(container);
 	setup_dev();
 
-	printf("INFO container PID: %d", getpid());
+	int pid = getpid();
+	if (pid == 1){
+		printf("INFO container initialized");
+
+	} else {
+		printf("INFO container PID: %d\n", getpid());
+	}
 
 	// setup nameservers for internet access
 	setup_resolvconf();
@@ -207,6 +209,7 @@ int start(void* arg) {
 		system("apk add bash &> /dev/null");
 	}
 
+	int retval;
 	if ((FLAGS & CONT_CMD) == CONT_CMD) {
 		FILE* startup = fopen("/.startup", "w");
 		fprintf(startup, "%s\n", "source $HOME/.bashrc");
@@ -217,21 +220,17 @@ int start(void* arg) {
 		}
 		fclose(startup);
 		chdir("/src");
-		//
-		// char* args[] = {"--init-file", "/.startup", NULL};
-		// if (execvp("/bin/bash", args) != 0) {
-		// 	perror("Error initializing shell");
-		// 	return EXIT_FAILURE;
-		// }
-		if (system("/bin/bash --init-file /.startup") <= 0) {
+		if ((retval = execl("/bin/bash", "--init-file", "/.startup", (char*) NULL)) != 0) {
+			remove("/.startup");
+			printf("ERROR shell retval: %d\n", retval);
 			perror("Error initializing shell");
 			return EXIT_FAILURE;
 		}
 		remove("/.startup");
 	} else {
-		char* args[] = {NULL};
-		if (execvp("/bin/bash", args) != 0) {
-			perror("Error running shell");
+		if ((retval = execl("/bin/bash", "", (char*) NULL)) != 0) {
+			printf("ERROR shell retval: %d\n", retval);
+			perror("Error initializing shell");
 			return EXIT_FAILURE;
 		}
 	}
@@ -239,12 +238,15 @@ int start(void* arg) {
 }
 
 
-void init(char const* cname, char const* cid, char const* croot, char** args, unsigned int flags) {
-	cont = (container_t*) calloc(1, sizeof(struct container));
+void init(char const* cname, char const* cid, char const* croot, char** cargs, struct cenv* cenvp, unsigned int flags) {
+	cont = (container_t*) calloc(1, sizeof(container_t));
 	if (cont == NULL) {
 		errno = ENOMEM;
 		perror("Cannot allocate memory for container");
 	}
+
+	cont->cont_envp = cenvp;
+
 	strcpy(cont->cont_id, cid);
 	strcpy(cont->root, croot);
 
@@ -262,9 +264,9 @@ void init(char const* cname, char const* cid, char const* croot, char** args, un
 
 	FLAGS = flags;
 
-	if (args != NULL) {
+	if (cargs != NULL) {
 		FLAGS |= CONT_CMD;
-		cont->cmd_args = args;
+		cont->cmd_args = cargs;
 		setup_src();
 	}
 

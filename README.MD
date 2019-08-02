@@ -25,6 +25,13 @@ At shell logout all the mount points are released and sanitized.
 
     ccont --list, -l                print a list of available file systems
     ccont --help, -h                print this message
+    
+    Env:
+    CONT_<env>=<value> ccont        passes the 'env' to the container. Env vari-
+                                    able must be prefixed with 'CONT_'
+                                    and must have a value. If ran with
+                                    'sudo' '-E' flag is mandatory
+                                    eg. 'CONT_PATH=$PATH sudo -E ccont ...'
 
 `# ccont ubuntu`
 
@@ -45,6 +52,11 @@ Starts the container `ubuntu-nodejs` and runs `node` with argument `server.js` w
 `# ccont ubuntu-node -c bash`
 
 This is workaround to mount the current working directory without executing any specific command. Result will be a double shell but the current working directory will be successfully mounted to `/src` of the container.
+
+`# CONT_PORT=3000 ubuntu-node -c node server.js`
+
+Passing environmental variables is done by prefixing the wanted variable with `CONT_`.
+In the same manner `DISPLAY` variable can be passed, eg. `$ CONT_DISPLAY=$DISPLAY sudo -E ccont ubuntu-test -c nautilus .`. Do not forget adding `-E` option if running the command with `sudo` otherwise variables will not be passed to `ccont` and therefore neither to in this case `nautilus`.
 
 ## Build
 

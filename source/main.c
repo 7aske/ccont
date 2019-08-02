@@ -19,9 +19,13 @@
 
 void panic(const char*, int);
 
+void setup_load_cenv(char**, cenv_t**);
+
 void setup_cont_image(char const*, char const*);
 
 void setup_cont_image_prebuilt(char const*, char const*);
+
+void print_cenv(cenv_t*);
 
 void print_version_header();
 
@@ -33,8 +37,9 @@ void print_help();
 
 void setup_ftree(char*);
 
-int main(int argc, char* args[]) {
+int main(int argc, char* args[], char** envp) {
 	char* rootdir = dirname(abspth(args[0]));
+	cenv_t* cenvs = NULL;
 	char bldfld[192];
 	char cntfld[192];
 
@@ -71,6 +76,9 @@ int main(int argc, char* args[]) {
 		free(rootdir);
 		panic("Please run as root", EACCES);
 	}
+
+	setup_load_cenv(envp, &cenvs);
+
 	unsigned int flags = 0;
 	int image_selected = 0;
 	int prebuilt = 0;
@@ -103,11 +111,25 @@ int main(int argc, char* args[]) {
 			if (strlen(args[i]) > 10) {
 				if (strlen(args[i]) < 13) {
 					free(rootdir);
+					while (cenvs != NULL) {
+						cenv_t* freep = cenvs;
+						cenvs = cenvs->next;
+						free(freep->key);
+						free(freep->val);
+						free(freep);
+					}
 					panic("Container ID too short", EINVAL);
 				}
 				strncpy(udef_id, eq + 1, 32);
 			} else {
 				free(rootdir);
+				while (cenvs != NULL) {
+					cenv_t* freep = cenvs;
+					cenvs = cenvs->next;
+					free(freep->key);
+					free(freep->val);
+					free(freep);
+				}
 				panic("Invalid container ID", EINVAL);
 				return 1;
 			}
@@ -115,12 +137,19 @@ int main(int argc, char* args[]) {
 	}
 	char* contid = NULL;
 	if (image_selected) {
-		printf("%s\n", image_name);
+		printf("INFO cont-name: %s\n", image_name);
 		if (prebuilt) {
 			setup_cont_image_prebuilt(image_name, rootdir);
 			char* p = strrchr(image_name, '-');
-			if (p == NULL){
+			if (p == NULL) {
 				free(rootdir);
+				while (cenvs != NULL) {
+					cenv_t* freep = cenvs;
+					cenvs = cenvs->next;
+					free(freep->key);
+					free(freep->val);
+					free(freep);
+				}
 				panic("Please specify a valid rootfs", EINVAL);
 				return 1;
 			}
@@ -146,22 +175,43 @@ int main(int argc, char* args[]) {
 			if (cmd_start == argc - 1) {
 				free(rootdir);
 				free(contid);
+				while (cenvs != NULL) {
+					cenv_t* freep = cenvs;
+					cenvs = cenvs->next;
+					free(freep->key);
+					free(freep->val);
+					free(freep);
+				}
 				panic("Usage: ccont -c <args>...", EINVAL);
 				return 1;
 			} else {
-				init(image_name, contid, rootdir, &args[cmd_start + 1], flags);
+				init(image_name, contid, rootdir, &args[cmd_start + 1], cenvs, flags);
 				free(contid);
 			}
 		} else {
-			init(image_name, contid, rootdir, NULL, flags);
+			init(image_name, contid, rootdir, NULL, cenvs, flags);
 			free(contid);
 		}
 	} else {
+		while (cenvs != NULL) {
+			cenv_t* freep = cenvs;
+			cenvs = cenvs->next;
+			free(freep->key);
+			free(freep->val);
+			free(freep);
+		}
 		free(rootdir);
 		panic("Please specify a valid rootfs", EINVAL);
 		return 1;
 	}
 	free(rootdir);
+	while (cenvs != NULL) {
+		cenv_t* freep = cenvs;
+		cenvs = cenvs->next;
+		free(freep->key);
+		free(freep->val);
+		free(freep);
+	}
 	return 0;
 }
 
@@ -214,6 +264,7 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 		}
 	}
 	free(cont_folder);
+
 }
 
 void setup_cont_image(char const* build_name, char const* rootdir) {
@@ -263,7 +314,7 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 		sprintf(buf, "wget -O %s %s -q --show-progress", cache_fname, sel_rootfs);
 		system(buf);
 
-		char* cbuf = (char *) calloc(128, sizeof(char));
+		char* cbuf = (char*) calloc(128, sizeof(char));
 		strcpy(cbuf, cache_fname);
 		strcat(cbuf, ".tar.gz");
 		chmod(cbuf, 0775);
@@ -287,7 +338,7 @@ void setup_cont_image(char const* build_name, char const* rootdir) {
 	free(cache_dir);
 }
 
-void print_version_header(){
+void print_version_header() {
 	printf("Ccont 0.0.3 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
 }
 
@@ -304,6 +355,15 @@ void print_help() {
 	printf(_HELPFORMAT, "", "");
 	printf(_HELPFORMAT, "ccont --list, -l", "print a list of available file systems");
 	printf(_HELPFORMAT, "ccont --help, -h", "print this message");
+	printf(_HELPFORMAT, "", "");
+	printf(_HELPFORMAT, "Env:", "");
+	printf(_HELPFORMAT, "CONT_<env>=<value> ccont", "passes the 'env' to the container. Env vari-");
+	printf(_HELPFORMAT, "", "able must be prefixed with 'CONT_'");
+	printf(_HELPFORMAT, "", "and must have a value. If ran with");
+	printf(_HELPFORMAT, "", "'sudo' '-E' flag is mandatory");
+	printf(_HELPFORMAT, "", "eg. 'CONT_PATH=$PATH sudo -E ccont ...'");
+
+
 }
 
 void print_rootfs_header() {
@@ -359,4 +419,48 @@ void setup_ftree(char* root) {
 
 	strcat(buf, "/build");
 	mkdir(buf, 0755);
+}
+
+void print_cenv(cenv_t* cenv) {
+	cenv_t* curr = cenv;
+	printf("0x%x\n", curr);
+	while (curr != NULL) {
+		printf("Key: %s Value: %s\n", curr->key, curr->val);
+		curr = curr->next;
+	}
+}
+
+void setup_load_cenv(char** envp, cenv_t** cenv) {
+	for (char** env = envp; *env != NULL; env++) {
+		if (strncmp(*env, "CONT_", 5) == 0) {
+			char* us = strchr(*env, '_');
+			char* eq = strchr(*env, '=');
+			if (eq != NULL && us != NULL && strlen(eq + 1) > 0) {
+				cenv_t* newcenv = (cenv_t*) calloc(1, sizeof(cenv_t));
+				*eq++ = '\0';
+				*us++ = '\0';
+				char* newkey = (char*) calloc(strlen(eq), sizeof(char));
+				char* newval = (char*) calloc(strlen(us), sizeof(char));
+
+				strcpy(newkey, us);
+				strcpy(newval, eq);
+
+				newcenv->key = newkey;
+				newcenv->val = newval;
+				newcenv->next = NULL;
+
+				// could be optimized
+				if (*cenv == NULL) {
+					*cenv = newcenv;
+				} else {
+					cenv_t** currb = cenv;
+					while ((*currb)->next != NULL) {
+						currb = &((*currb)->next);
+					}
+					(*currb)->next = newcenv;
+				}
+			}
+
+		}
+	}
 }
