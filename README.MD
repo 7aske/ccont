@@ -28,7 +28,7 @@ At shell logout all the mount points are released and sanitized.
 
 `# ccont ubuntu`
 
-Drops user into a containerized ubuntu rootfs container
+Drops user into a containerized ubuntu container after downloading the filesystem
 
 `# ccont ubuntu --rm`
 
@@ -48,11 +48,11 @@ This is workaround to mount the current working directory without executing any 
 
 ## Build
 
-```$ make```
+`$ make`
 
 Compiles `Ccont` using the available `gcc` compiler.
 
-```# make install```
+`# make install`
 
 Creates a symlink to the `ccont` executable in `build` folder.
 
@@ -60,7 +60,7 @@ Creates a symlink to the `ccont` executable in `build` folder.
 
 Must be run as root on a Unix based machine.
 
-Compilation uses GNU `gcc`.
+Compilation uses `gcc`.
 
 Container setup process uses `wget` and `tar`.
 

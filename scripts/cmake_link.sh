@@ -1,0 +1,1 @@
+ln -f ./cmake-build-debug/ccont ./build/ccont

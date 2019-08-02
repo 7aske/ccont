@@ -23,32 +23,51 @@ void setup_cont_image(char const*, char const*);
 
 void setup_cont_image_prebuilt(char const*, char const*);
 
+void print_rootfs_header();
+
 void print_rootfs(char const*);
 
 void print_help();
 
+void setup_ftree(char*);
+
 int main(int argc, char* args[]) {
-	// heap
+	printf("%d\n", argc);
+	printf("%s\n", args[0]);
+
 	char* rootdir = dirname(abspth(args[0]));
 	char bldfld[192];
+	char cntfld[192];
+
 	strcpy(bldfld, rootdir);
 	strcat(bldfld, "/cache/build");
 
+	strcpy(cntfld, rootdir);
+	strcat(cntfld, "/containers");
+
+	setup_ftree(rootdir);
+
 	if (argc == 1) {
 		print_help();
+		free(rootdir);
 		return 0;
 	}
 
 	for (int i = 0; i < argc; i++) {
 		if (strcmp(args[i], "--help") == 0 || strcmp(args[i], "-h") == 0) {
 			print_help();
+			free(rootdir);
 			return 0;
 		} else if (strcmp(args[i], "--list") == 0 || strcmp(args[i], "-l") == 0) {
+			print_rootfs_header();
 			print_rootfs(bldfld);
+			print_rootfs(cntfld);
+			free(rootdir);
 			return 0;
 		}
 	}
 	if (getuid() != 0) {
+		free(rootdir);
 		panic("Please run as root", EACCES);
 	}
 	unsigned int flags = 0;
@@ -74,7 +93,7 @@ int main(int argc, char* args[]) {
 			flags |= CONT_RM;
 		} else if (strcmp(args[i], "--build") == 0 || strcmp(args[i], "-b") == 0) {
 			flags |= CONT_BUILD;
-		} else if (contains(bldfld, args[i])) {
+		} else if (contains(bldfld, args[i]) || contains(cntfld, args[i])) {
 			image_selected = 1;
 			prebuilt = 1;
 			strcpy(image_name, args[i]);
@@ -82,10 +101,12 @@ int main(int argc, char* args[]) {
 			char* eq = strrchr(args[i], '=');
 			if (strlen(args[i]) > 10) {
 				if (strlen(args[i]) < 13) {
+					free(rootdir);
 					panic("Container ID too short", EINVAL);
 				}
 				strncpy(udef_id, eq + 1, 32);
 			} else {
+				free(rootdir);
 				panic("Invalid container ID", EINVAL);
 			}
 		}
@@ -116,6 +137,7 @@ int main(int argc, char* args[]) {
 		}
 		if (cmd_start != 0) {
 			if (cmd_start == argc - 1) {
+				free(rootdir);
 				panic("Usage: ccont -c <args>...", EINVAL);
 			} else {
 				init(image_name, contid, rootdir, &args[cmd_start + 1], flags);
@@ -125,8 +147,10 @@ int main(int argc, char* args[]) {
 		}
 	} else {
 		panic("Please specify a valid rootfs", EINVAL);
+		free(rootdir);
 		return 1;
 	}
+	free(rootdir);
 	return 0;
 }
 
@@ -141,38 +165,41 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 
 	strcat(cont_folder, build_name);
 
-	char* cache_fname = (char*) calloc(128, sizeof(char));
-	strcpy(cache_fname, rootdir);
-
-	strcat(cache_fname, "/cache");
-	if (!exists_stat(cache_fname)) {
-		mkdir(cache_fname, 0755);
-	}
-
-	strcat(cache_fname, "/build/");
-	if (!exists_stat(cache_fname)) {
-		mkdir(cache_fname, 0755);
-	}
-
-	strcat(cache_fname, build_name);
-	strcat(cache_fname, ".tar.gz");
-
-	if (!exists_stat(cache_fname)) {
-		panic("Cached file not found", ENOENT);
-	}
-
-	char buf[256];
-	memset(buf, 0, 256);
-
 	if (!exists_stat(cont_folder)) {
+		char buf[256];
+		memset(buf, 0, 256);
+
+		char* cache_fname = (char*) calloc(128, sizeof(char));
+		strcpy(cache_fname, rootdir);
+
+		strcat(cache_fname, "/cache");
+		if (!exists_stat(cache_fname)) {
+			mkdir(cache_fname, 0755);
+		}
+
+		strcat(cache_fname, "/build/");
+		if (!exists_stat(cache_fname)) {
+			mkdir(cache_fname, 0755);
+		}
+
+		strcat(cache_fname, build_name);
+		strcat(cache_fname, ".tar.gz");
+
+		if (!exists_stat(cache_fname)) {
+			free(cont_folder);
+			panic("Cached file not found", ENOENT);
+		}
+
 		mkdir(cont_folder, 0755);
 		sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
 		if (system(buf) != 0) {
+			free(cont_folder);
 			panic("Cannot extract archive", EIO);
 		} else {
 			printf("INFO extracted %s\n", build_name);
 		}
 	}
+	free(cont_folder);
 }
 
 void setup_cont_image(char const* build_name, char const* rootdir) {
@@ -254,13 +281,15 @@ void print_help() {
 	printf(_HELPFORMAT, "ccont --help, -h", "print this message");
 }
 
-void print_rootfs(char const* r) {
-	printf("Ccont 0.0.1 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
+void print_rootfs_header() {
+	printf("Ccont 0.0.2 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
 	printf("Available root file systems:\n");
 	printf(_HELPFORMAT, "ubuntu", "Ubuntu 18.10");
 	printf(_HELPFORMAT, "alpine", "Alpine 3.9.3");
 	printf(_HELPFORMAT, "", "");
+}
 
+void print_rootfs(char const* r) {
 	struct dirent* dir;
 	DIR* dirp;
 	if ((dirp = opendir(r)) != NULL) {
@@ -273,6 +302,8 @@ void print_rootfs(char const* r) {
 				if (p != NULL) {
 					*p = '\0';
 					printf(_HELPFORMAT, noext, dir->d_name);
+				} else {
+					printf(_HELPFORMAT, dir->d_name, dir->d_name);
 				}
 			}
 		}
@@ -284,4 +315,23 @@ void panic(char const* msg, int err) {
 	errno = err;
 	perror(msg);
 	exit(err);
+}
+
+void setup_ftree(char* root) {
+	char buf[256];
+	memset(buf, 0, 256);
+
+	strcpy(buf, root);
+	strcat(buf, "/container");
+
+	mkdir(buf, 0755);
+	memset(buf, 0, 256);
+
+	strcpy(buf, root);
+	strcat(buf, "/cache");
+
+	mkdir(buf, 0755);
+
+	strcat(buf, "/build");
+	mkdir(buf, 0755);
 }
