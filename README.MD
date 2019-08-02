@@ -33,7 +33,7 @@ At shell logout all the mount points are released and sanitized.
                                     'sudo' '-E' flag is mandatory
                                     eg. 'CONT_PATH=$PATH sudo -E ccont ...'
 
-`# ccont --rm`
+`# ccont test --rm`
 
 Drops user into a containerized ubuntu container after downloading the filesystem which is removed after use.
 

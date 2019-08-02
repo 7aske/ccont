@@ -37,13 +37,23 @@ void print_help();
 
 void setup_ftree(char*);
 
+char* parse_arg(char*, char*);
+
 char* rootfs[] = {"ubuntu", "alpine", NULL};
 
 int main(int argc, char* args[], char** envp) {
 	char* rootdir = dirname(abspth(args[0]));
 	cenv_t* cenvs = NULL;
-	char bldfld[192];
-	char cntfld[192];
+
+	char bldfld[256];
+	char cntfld[256];
+
+	unsigned int flags = 0;
+	int prebuilt = 0;
+	int cmd_start = 0;
+	char distro_name[32];
+	char userdef_name[32];
+
 
 	strcpy(bldfld, rootdir);
 	strcat(bldfld, "/cache/build");
@@ -52,12 +62,12 @@ int main(int argc, char* args[], char** envp) {
 	strcat(cntfld, "/containers");
 
 	setup_ftree(rootdir);
-	
-	for (int i = 0; i < argc; i++) {
-		if (strcmp(args[i], "--help") == 0 || strcmp(args[i], "-h") == 0) {
+
+	if (argc == 2) {
+		if (strcmp(args[1], "--help") == 0 || strcmp(args[1], "-h") == 0) {
 			print_help();
 			return 0;
-		} else if (strcmp(args[i], "--list") == 0 || strcmp(args[i], "-l") == 0) {
+		} else if (strcmp(args[1], "--list") == 0 || strcmp(args[1], "-l") == 0) {
 			print_rootfs_header();
 			printf("Saved containers:\n");
 			print_rootfs(bldfld);
@@ -73,81 +83,61 @@ int main(int argc, char* args[], char** envp) {
 
 	setup_load_cenv(envp, &cenvs);
 
-	unsigned int flags = 0;
-	int image_selected = -1;
-	int prebuilt = 0;
-	int cmd_start = 0;
-	char distro_name[32];
-	char userdef_name[32];
-
 	memset(userdef_name, 0, 32);
 	memset(distro_name, 0, 32);
 
-	for (int i = 0; i < argc; i++) {
+	for (int i = 1; i < argc; i++) {
 		if (strncmp(args[i], "--distro=", 9) == 0) {
-			if (strlen(args[i]) > 10) {
-				char* eq = strrchr(args[i], '=');
-				*eq++ = '\0';
-				strncpy(distro_name, eq, 32);
-				image_selected = indexof(rootfs, distro_name);
-			} else {
-				panic("Invalid distro name", EINVAL);
-				return 1;
+			char* dname = parse_arg(args[i], "--distro=");
+			if (dname != NULL) {
+				strcpy(distro_name, dname);
 			}
-		} else if (strcmp(args[i], "-c") == 0) {
-			cmd_start = i;
-			break;
+		} else if (strncmp(args[i], "--cont-id=", 10) == 0) {
+			char* cid = parse_arg(args[i], "--cont-id=");
+			if (cid != NULL) {
+				strcpy(userdef_name, cid);
+			}
 		} else if (strcmp(args[i], "--rm") == 0) {
 			flags |= CONT_RM;
 		} else if (strcmp(args[i], "--build") == 0 || strcmp(args[i], "-b") == 0) {
 			flags |= CONT_BUILD;
-		} else if (contains(bldfld, args[i]) || contains(cntfld, args[i])) {
-			image_selected = 1;
-			prebuilt = 1;
-			strcpy(userdef_name, args[i]);
-		} else if (strncmp(args[i], "--cont-id=", 10) == 0) {
-			if (strlen(args[i]) > 10) {
-				if (strlen(args[i]) < 13) {
-					panic("Container ID too short", EINVAL);
-					return 1;
-				}
-				char* eq = strrchr(args[i], '=');
-				if (contains(bldfld, eq + 1) || contains(cntfld, eq + 1)) {
-					panic("Container already exists", EINVAL);
-				}
-				strncpy(userdef_name, eq + 1, 32);
-			} else {
-				panic("Invalid container ID", EINVAL);
-				return 1;
+		} else if (strncmp(args[i], "-", 1) != 0) {
+			if (contains(bldfld, args[i]) || contains(cntfld, args[i])) {
+				prebuilt = 1;
 			}
+			strcpy(userdef_name, args[i]);
+		} else if (strcmp(args[i], "-c") == 0) {
+			cmd_start = i + 1;
+			break;
 		}
 	}
-	char* contid = NULL;
-	if (image_selected == -1) {
+
+	if (cmd_start == argc) {
+		panic("Usage: ccont -c <args>...", EINVAL);
+		return 1;
+	}
+
+	if (distro_name[0] == '\0') {
 		strcpy(distro_name, "ubuntu");
 	}
+
 	if (prebuilt) {
 		setup_cont_image_prebuilt(userdef_name, rootdir);
-		contid = userdef_name;
 	} else {
 		if (userdef_name[0] == '\0') {
+			char* contid;
 			srand(time(NULL));
 			contid = encode(random(), 42);
-		} else {
-			contid = (char*) calloc(strlen(userdef_name), sizeof(char));
-			strcpy(contid, userdef_name);
+			strcpy(userdef_name, contid);
+			free(contid);
 		}
-		setup_cont_image(distro_name, contid, rootdir);
+		setup_cont_image(distro_name, userdef_name, rootdir);
 	}
+
 	if (cmd_start != 0) {
-		if (cmd_start == argc - 1) {
-			panic("Usage: ccont -c <args>...", EINVAL);
-			return 1;
-		} else {
-			init(distro_name, contid, rootdir, &args[cmd_start + 1], cenvs, flags);
-		}
+		init(distro_name, userdef_name, rootdir, &args[cmd_start], cenvs, flags);
 	} else {
-		init(distro_name, contid, rootdir, NULL, cenvs, flags);
+		init(distro_name, userdef_name, rootdir, NULL, cenvs, flags);
 	}
 
 	return 0;
@@ -398,4 +388,14 @@ void setup_load_cenv(char** envp, cenv_t** cenv) {
 			}
 		}
 	}
+}
+
+char* parse_arg(char* arg, char* prefix) {
+	if (strlen(arg) > strlen(prefix) + 2) {
+		char* eq = strrchr(arg, '=');
+		if (eq != NULL) {
+			return eq + 1;
+		}
+	}
+	return NULL;
 }
