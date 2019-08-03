@@ -9,7 +9,6 @@
 #include <sys/mount.h>
 #include <errno.h>
 #include <sched.h>
-#include <libnet.h>
 
 #include "../headers/jail.h"
 
@@ -19,6 +18,15 @@ static size_t* cont_stack_fptr = NULL;
 static container_t* cont = NULL;
 
 static unsigned int FLAGS;
+
+void signal_handler(int sig) {
+	printf("INFO received signal %s\n", strsignal(sig));
+	if (sig == SIGINT) {
+		if (cont->chld_pid != 0) {
+			kill(cont->chld_pid, SIGKILL);
+		}
+	}
+}
 
 void* stalloc(long size) {
 	void* stack = (void*) malloc(size);
@@ -38,7 +46,7 @@ void setup_src() {
 	system(buf);
 	memset(buf, 0, BUFSIZE);
 	sprintf(buf, "%s/src", cont->cont_root);
-	if (mount("./", buf, "tmpfs", MS_BIND, NULL) < 0) {
+	if (mount("./", buf, "tmpfs", (FLAGS & CONT_RBIND) == CONT_RBIND ? MS_BIND | MS_REC : MS_BIND, NULL) < 0) {
 		errno = EIO;
 		perror("Unable to mount /src");
 	}
@@ -239,12 +247,14 @@ int start(void* arg) {
 
 
 void init(char const* cdistro, char const* cname, char const* croot, char** cargs, struct cenv* cenvp, unsigned int flags) {
+	signal(SIGINT, signal_handler);
+
 	cont = (container_t*) calloc(1, sizeof(container_t));
 	if (cont == NULL) {
 		errno = ENOMEM;
 		perror("Cannot allocate memory for container");
 	}
-
+	cont->chld_pid = 0;
 	cont->cont_envp = cenvp;
 
 	strcpy(cont->cont_distro, cdistro);
@@ -262,6 +272,10 @@ void init(char const* cdistro, char const* cname, char const* croot, char** carg
 
 	FLAGS = flags;
 
+	if ((FLAGS & CONT_RBIND) == CONT_RBIND) {
+		printf("WARNING recursive bind enabled\n");
+	}
+
 	if (cargs != NULL) {
 		FLAGS |= CONT_CMD;
 		cont->cmd_args = cargs;
@@ -273,17 +287,19 @@ void init(char const* cdistro, char const* cname, char const* croot, char** carg
 
 	setup_bashrc();
 
-	int status;
+	int code;
 	// flags to clone process tree and unix time sharing
 	clone_flags = CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD;
 	if ((cpid = clone(start, cont->cont_stack, clone_flags, (void*) cont)) <= 0) {
 		perror("Error cloning process");
 	} else {
 		printf("INFO container PID: %d\n", cpid);
+		cont->chld_pid = cpid;
 	}
 
 	// wait for container shell to exit
 	sleep(1);
-	waitpid(cpid, &status, 0);
+	waitpid(cpid, &code, 0);
+	printf("INFO container exists with code: %d\n", code);
 	cleanup();
 }

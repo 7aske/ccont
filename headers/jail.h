@@ -1,7 +1,7 @@
 #define CONT_RM     1u   /* 0000 0001 */
 #define CONT_CMD    2u   /* 0000 0010 */
 #define CONT_BUILD  4u   /* 0000 0100 */
-#define FLAG_4      8u   /* 0000 1000 */
+#define CONT_RBIND  8u   /* 0000 1000 */
 #define FLAG_5      16u  /* 0001 0000 */
 #define FLAG_6      32u  /* 0010 0000 */
 #define FLAG_7      64u  /* 0100 0000 */
@@ -22,8 +22,10 @@ typedef struct container {
 	cenv_t* cont_envp;
 	size_t* cont_stack;
 	long cont_stack_size;
+	int chld_pid;
 } container_t;
 
+void signal_handler(int);
 
 void* stalloc(long size);
 

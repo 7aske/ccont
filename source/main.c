@@ -23,7 +23,7 @@ void setup_load_cenv(char**, cenv_t**);
 
 void setup_cont_image(char const*, char const*, char const*);
 
-void setup_cont_image_prebuilt(char const*, char const*);
+void setup_cont_image_prebuilt(char const*, char const*, char const*);
 
 void print_cenv(cenv_t*);
 
@@ -53,6 +53,7 @@ int main(int argc, char* args[], char** envp) {
 	int cmd_start = 0;
 	char distro_name[32];
 	char userdef_name[32];
+	char* copy_name_ptr = NULL;
 
 
 	strcpy(bldfld, rootdir);
@@ -97,8 +98,17 @@ int main(int argc, char* args[], char** envp) {
 			if (cid != NULL) {
 				strcpy(userdef_name, cid);
 			}
+		} else if (strncmp(args[i], "--copy=", 7) == 0) {
+			char* cid = parse_arg(args[i], "--copy=");
+			if (cid != NULL && contains(bldfld, cid)) {
+				prebuilt = 1;
+				copy_name_ptr = cid;
+				printf("INFO copying %s\n", copy_name_ptr);
+			}
 		} else if (strcmp(args[i], "--rm") == 0) {
 			flags |= CONT_RM;
+		} else if (strcmp(args[i], "--rbind") == 0) {
+			flags |= CONT_RBIND;
 		} else if (strcmp(args[i], "--build") == 0 || strcmp(args[i], "-b") == 0) {
 			flags |= CONT_BUILD;
 		} else if (strncmp(args[i], "-", 1) != 0) {
@@ -122,7 +132,7 @@ int main(int argc, char* args[], char** envp) {
 	}
 
 	if (prebuilt) {
-		setup_cont_image_prebuilt(userdef_name, rootdir);
+		setup_cont_image_prebuilt(userdef_name, rootdir, copy_name_ptr);
 	} else {
 		if (userdef_name[0] == '\0') {
 			char* contid;
@@ -143,7 +153,7 @@ int main(int argc, char* args[], char** envp) {
 	return 0;
 }
 
-void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
+void setup_cont_image_prebuilt(const char* build_name, char const* rootdir, char const* copy) {
 	char* cont_folder = (char*) calloc(128, sizeof(char));
 	strcpy(cont_folder, rootdir);
 
@@ -159,30 +169,34 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 		memset(buf, 0, 256);
 
 		char* cache_fname = (char*) calloc(128, sizeof(char));
+		char* copy_fname = (char*) calloc(128, sizeof(char));
 		strcpy(cache_fname, rootdir);
 
 		strcat(cache_fname, "/cache");
-		if (!exists_stat(cache_fname)) {
-			mkdir(cache_fname, 0755);
-		}
-
 		strcat(cache_fname, "/build/");
-		if (!exists_stat(cache_fname)) {
-			mkdir(cache_fname, 0755);
-		}
+
+		strcpy(copy_fname, cache_fname);
 
 		strcat(cache_fname, build_name);
 		strcat(cache_fname, ".tar.gz");
 
-		if (!exists_stat(cache_fname)) {
-			free(cont_folder);
-			panic("Cached file not found", ENOENT);
-		}
-
 		mkdir(cont_folder, 0755);
-		sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
+		if (copy != NULL){
+			if (!exists_stat(copy_fname)){
+				rmdir(cont_folder);
+				panic("Copy source file not found", ENOENT);
+			}
+			strcat(copy_fname, copy);
+			strcat(copy_fname, ".tar.gz");
+			sprintf(buf, "tar xf %s -C %s > /dev/null", copy_fname, cont_folder);
+		} else {
+			if (!exists_stat(cache_fname)) {
+				rmdir(cont_folder);
+				panic("Cached file not found", ENOENT);
+			}
+			sprintf(buf, "tar xf %s -C %s > /dev/null", cache_fname, cont_folder);
+		}
 		if (system(buf) != 0) {
-			free(cont_folder);
 			panic("Cannot extract archive", EIO);
 		} else {
 			printf("INFO extracted %s\n", build_name);
@@ -190,6 +204,10 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir) {
 			sprintf(buf, "chmod 775 %s", cont_folder);
 			system(buf);
 		}
+		free(cont_folder);
+		free(copy_fname);
+		free(cache_fname);
+
 	}
 }
 
@@ -215,17 +233,11 @@ void setup_cont_image(char const* distro_name, char const* build_name, char cons
 	strcpy(cache_dir, rootdir);
 
 	strcat(cache_dir, "/cache");
-	if (!exists_stat(cache_dir)) {
-		mkdir(cache_dir, 0755);
-	}
 
 	char* cont_folder = (char*) calloc(128, sizeof(char));
 	strcpy(cont_folder, rootdir);
 
 	strcat(cont_folder, "/containers/");
-	if (!exists_stat(cont_folder)) {
-		mkdir(cont_folder, 0755);
-	}
 
 	strcat(cont_folder, build_name);
 
@@ -265,7 +277,7 @@ void setup_cont_image(char const* distro_name, char const* build_name, char cons
 }
 
 void print_version_header() {
-	printf("Ccont 0.0.3 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
+	printf("Ccont 0.0.4 ==== Nikola Tasic ==== https://github.com/7aske/ccont\n");
 }
 
 void print_help() {
@@ -276,7 +288,9 @@ void print_help() {
 	printf(_HELPFORMAT, "", "command <cmd> with arguments [args]");
 	printf(_HELPFORMAT, "Options:", "");
 	printf(_HELPFORMAT, "--rm", "removes container after exiting");
+	printf(_HELPFORMAT, "--rbind", "when using '-c' mounts the current directory with '--rbind' flag");
 	printf(_HELPFORMAT, "--build, -b", "builds an image of the container after exiting");
+	printf(_HELPFORMAT, "--copy=<id>", "copies an image of a saved container container");
 	printf(_HELPFORMAT, "--cont-id=<id>", "manually give an id name to a container");
 	printf(_HELPFORMAT, "--distro=<distro>", "manually select a distro (default = ubuntu)");
 	printf(_HELPFORMAT, "", "");
