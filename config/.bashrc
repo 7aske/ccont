@@ -68,5 +68,8 @@ else
 		PS1='\u@\h \w \$ '
 	fi
 fi
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
 export PATH=$PATH:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 unset use_color safe_term match_lhs sh
