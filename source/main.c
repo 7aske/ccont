@@ -212,7 +212,7 @@ void setup_cont_image_prebuilt(const char* build_name, char const* rootdir, char
 }
 
 void setup_cont_image(char const* distro_name, char const* build_name, char const* rootdir) {
-	char ubuntu[] = "http://cdimage.ubuntu.com/ubuntu-base/releases/18.10/release/ubuntu-base-18.10-base-amd64.tar.gz";
+	char ubuntu[] = "http://cdimage.ubuntu.com/ubuntu-base/releases/19.04/release/ubuntu-base-19.04-base-amd64.tar.gz";
 	char alpine[] = "http://dl-cdn.alpinelinux.org/alpine/v3.9/releases/x86_64/alpine-minirootfs-3.9.3-x86_64.tar.gz";
 	char* sel_rootfs = NULL;
 
